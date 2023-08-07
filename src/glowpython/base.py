@@ -64,9 +64,63 @@ def runglow() -> None:
     cglow.zz = cglow.z * 1e5
     fortran.glow()
 
-def exec_glow(idate, utsec, glat, glon, Q, Echar, f107a, f107, f107p, ap, jmax: int = 250) -> Dataset:
-    """Run GLOW with the given parameters and return the result as an xarray.Dataset.
-    This replicates the behavior of the `glowbasic.f90` driver program."""
+def generic(time: datetime, glat: Numeric, glon: Numeric, Nbins: int, Q: Numeric = None, Echar: Numeric = None, *, geomag_params: dict | Iterable = None, tzaware: bool = False, jmax: int = 250) -> xarray.Dataset:
+    """GLOW model with optional electron precipitation assuming Maxwellian distribution.
+    Defaults to no precipitation.
+
+    Args:
+        time (datetime): Model evaluation time.
+        glat (Numeric): Location latitude.
+        glon (Numeric): Location longitude.
+        Q (Numeric, optional): Flux of precipitating electrons. Setting to None or < 0.001 makes it equivalent to no-precipitation. Defaults to None.
+        Echar (Numeric, optional): Energy of precipitating electrons. Setting to None or < 1 makes it equivalent to no-precipitation. Defaults to None.
+        Nbins (int): Number of energy bins (unused, set to 250).
+        geomag_params (dict | Iterable, optional): Custom geomagnetic parameters 'f107a' (average f10.7 over 81 days), 'f107' (current day f10.7), 'f107p' (previous day f10.7) and 'Ap' (the global 3 hour ap index). Must be present in this order for list or tuple, and use these keys for the dictionary. Defaults to None.
+        tzaware (bool, optional): If time is time zone aware. If true, `time` is recast to 'UTC' using `time.astimezone(pytz.utc)`.
+
+    Raises:
+        RuntimeError: Invalid type for geomag_params.
+        KeyError: Any of the geomagnetic parameter keys absent.
+        IndexError: geomag_params does not have at least 4 elements.
+
+    Returns:
+        xarray.Dataset: GLOW model output dataset.
+    """
+    if tzaware:
+        time = time.astimezone(pytz.utc)
+
+    idate, utsec = glowdate(time)
+
+    if Q is None or Echar is None: # no precipitation case
+        Q = 0.0001
+        Echar = 0.1
+
+    if geomag_params is None:
+        ip = gi.get_indices([time - timedelta(days=1), time], 81, tzaware=tzaware)
+        f107a = float(ip["f107s"][1])
+        f107 = float(ip['f107'][1])
+        f107p = float(ip['f107'][0])
+        ap = float(ip["Ap"][1])
+    elif isinstance(geomag_params, dict):
+        f107a = float(geomag_params['f107a'])
+        f107 = float(geomag_params['f107'])
+        f107p = float(geomag_params['f107p'])
+        ap = float(geomag_params['Ap'])
+    elif isinstance(geomag_params, Iterable):
+        f107a = float(geomag_params[0])
+        f107 = float(geomag_params[1])
+        f107p = float(geomag_params[2])
+        ap = float(geomag_params[3])
+    else:
+        raise RuntimeError('Invalid type %s for geomag params %s' % (str(type(geomag_params), str(geomag_params))))
+    
+    ip = {}
+    ip['f107a'] = (f107a)
+    ip['f107'] = (f107)
+    ip['f107p'] = (f107p)
+    ip['ap'] = (ap)
+
+
     set_standard_switches()
     init_cglow(jmax)
     wrap_egrid()
@@ -80,9 +134,9 @@ def exec_glow(idate, utsec, glat, glon, Q, Echar, f107a, f107, f107p, ap, jmax: 
     stl = (cg.ut/3600. + cg.glong/15.) % 24
 
     (cg.z, cg.zo, cg.zo2, cg.zn2, cg.zns, cg.znd, cg.zno, cg.ztn,
-     cg.zun, cg.zvn, cg.ze, cg.zti, cg.zte, cg.zxden) = \
+    cg.zun, cg.zvn, cg.ze, cg.zti, cg.zte, cg.zxden) = \
         mzgrid(cg.jmax, cg.nex, cg.idate, cg.ut, cg.glat, cg.glong,
-               stl, cg.f107a, cg.f107, cg.f107p, cg.ap, IRI90_DIR)
+            stl, cg.f107a, cg.f107, cg.f107p, cg.ap, IRI90_DIR)
     
     # !
     # ! Fill altitude array, converting to cm:
@@ -108,16 +162,16 @@ def exec_glow(idate, utsec, glat, glon, Q, Echar, f107a, f107, f107p, ap, jmax: 
     hallcond = pedcond.copy()
     for j in range(jmax):
         pedcond[j], hallcond[j] = conduct(cg.glat, cg.glong, cg.z[j], cg.zo[j], cg.zo2[j], cg.zn2[j],
-                                          cg.zxden[2, j], cg.zxden[5, j], cg.zxden[6, j], cg.ztn[j], cg.zti[j], cg.zte[j])
+                                        cg.zxden[2, j], cg.zxden[5, j], cg.zxden[6, j], cg.ztn[j], cg.zti[j], cg.zte[j])
         
     try:
         ds = Dataset(coords={'alt_km': ('alt_km', copy(cg.zz)*1e-5, {'standard_name': 'altitude',
-                                                      'long_name': 'altitude',
-                                                      'units': 'km'}),
-                             'energy': ('energy', copy(cg.ener), {'long_name': 'energy',
-                                                        'units': 'eV'}),
-                             'precip': ('energy', copy(cg.phitop), {'long_name': 'auroral electron flux'})
-                             })
+                                                    'long_name': 'altitude',
+                                                    'units': 'km'}),
+                            'energy': ('energy', copy(cg.ener), {'long_name': 'precipitation energy',
+                                                        'units': 'eV'})},
+                    data_vars={'precip': ('energy', copy(cg.phitop), {'long_name': 'auroral electron flux'})
+                            })
     except ValueError:
         raise ImportError('cglow has not been initialized yet!')
 
@@ -199,85 +253,25 @@ def exec_glow(idate, utsec, glat, glon, Q, Echar, f107a, f107, f107p, ap, jmax: 
         "O(1D)",
     ]
 
-    # ds['production'] = Variable(('alt_km', 'state'), copy(cg.production).T, {'units': 'cm^{-3} s^{-1}'})
-    # ds['loss'] = Variable(('alt_km', 'state'), copy(cg.loss).T, {'units': 's^{-1}'})
-    # ds.coords['state'] = state
+    ds['production'] = Variable(('alt_km', 'state'), copy(cg.production).T, {'units': 'cm^{-3} s^{-1}'})
+    ds['loss'] = Variable(('alt_km', 'state'), copy(cg.loss).T, {'units': 's^{-1}'})
+    ds.coords['state'] = state
 
     ds['excitedDensity'] = Variable(('alt_km', 'state'), copy(cg.zxden).T, {'units': 'cm^{-3}'})
     ds['eHeat'] = Variable('alt_km', copy(cg.eheat), {'units': 'ergs cm^{-3} s^{-1}'})
     ds['Tez'] = Variable('alt_km', copy(cg.tez), {'units': 'eV cm^{-3} s^{-1}', 'comment': 'total energetic electron energy deposition', 'long_name': 'energy deposition'})
     ds['sflux'] = Variable('wave', cg.sflux,
-                           {'long_name': 'solar flux',
+                        {'long_name': 'solar flux',
                             'units': 'cm^{-2} s^{-1}',
                             'comment': 'scaled solar flux'})
     wave_attrs = {'long_name': 'wavelength',
-                  'units': 'Å'}
+                'units': 'Å'}
     ds.coords['wave1'] = ('wave', cg.wave1, wave_attrs)
     ds.coords['wave1'].attrs['comment'] = 'longwave edge of solar flux wavelength range'
     ds.coords['wave2'] = ('wave', cg.wave2, wave_attrs)
     ds.coords['wave2'].attrs['comment'] = 'shortwave edge of solar flux wavelength range'
 
     reset_cglow()
-    return ds
-
-def generic(time: datetime, glat: Numeric, glon: Numeric, Nbins: int, Q: Numeric = None, Echar: Numeric = None, *, geomag_params: dict | Iterable = None, tzaware: bool = False, jmax: int = 250) -> xarray.Dataset:
-    """GLOW model with optional electron precipitation assuming Maxwellian distribution.
-    Defaults to no precipitation.
-
-    Args:
-        time (datetime): Model evaluation time.
-        glat (Numeric): Location latitude.
-        glon (Numeric): Location longitude.
-        Q (Numeric, optional): Flux of precipitating electrons. Setting to None or < 0.001 makes it equivalent to no-precipitation. Defaults to None.
-        Echar (Numeric, optional): Energy of precipitating electrons. Setting to None or < 1 makes it equivalent to no-precipitation. Defaults to None.
-        Nbins (int): Number of energy bins (unused, set to 250).
-        geomag_params (dict | Iterable, optional): Custom geomagnetic parameters 'f107a' (average f10.7 over 81 days), 'f107' (current day f10.7), 'f107p' (previous day f10.7) and 'Ap' (the global 3 hour ap index). Must be present in this order for list or tuple, and use these keys for the dictionary. Defaults to None.
-        tzaware (bool, optional): If time is time zone aware. If true, `time` is recast to 'UTC' using `time.astimezone(pytz.utc)`.
-
-    Raises:
-        RuntimeError: Invalid type for geomag_params.
-        KeyError: Any of the geomagnetic parameter keys absent.
-        IndexError: geomag_params does not have at least 4 elements.
-
-    Returns:
-        xarray.Dataset: GLOW model output dataset.
-    """
-    if tzaware:
-        time = time.astimezone(pytz.utc)
-
-    idate, utsec = glowdate(time)
-
-    if Q is None or Echar is None: # no precipitation case
-        Q = 0.0001
-        Echar = 0.1
-
-    if geomag_params is None:
-        ip = gi.get_indices([time - timedelta(days=1), time], 81, tzaware=tzaware)
-        f107a = float(ip["f107s"][1])
-        f107 = float(ip['f107'][1])
-        f107p = float(ip['f107'][0])
-        ap = float(ip["Ap"][1])
-    elif isinstance(geomag_params, dict):
-        f107a = float(geomag_params['f107a'])
-        f107 = float(geomag_params['f107'])
-        f107p = float(geomag_params['f107p'])
-        ap = float(geomag_params['Ap'])
-    elif isinstance(geomag_params, Iterable):
-        f107a = float(geomag_params[0])
-        f107 = float(geomag_params[1])
-        f107p = float(geomag_params[2])
-        ap = float(geomag_params[3])
-    else:
-        raise RuntimeError('Invalid type %s for geomag params %s' % (str(type(geomag_params), str(geomag_params))))
-    
-    ip = {}
-    ip['f107a'] = (f107a)
-    ip['f107'] = (f107)
-    ip['f107p'] = (f107p)
-    ip['ap'] = (ap)
-
-    
-    ds = exec_glow(idate, utsec, glat, glon, Q, Echar, f107a, f107, f107p, ap, jmax)
 
     ds.attrs["geomag_params"] = ip
     if Q is not None and Echar is not None:
@@ -286,6 +280,9 @@ def generic(time: datetime, glat: Numeric, glon: Numeric, Nbins: int, Q: Numeric
         ds.attrs['precip'] ={'Q': 0, 'Echar': 0}
     ds.attrs["time"] = time.isoformat()
     ds.attrs["glatlon"] = (glat, glon)
+
+    # ds.ver.loc[dict(wavelength='5577')].plot()
+    # plt.show()
 
     return ds
 
@@ -335,7 +332,7 @@ def no_precipitation(time: datetime, glat: Numeric, glon: Numeric, Nbins: int, *
 
 
 def glowdate(t: datetime) -> tuple[str, str]:
-    idate = f'{t.year}{t.strftime("%j")}'
-    utsec = str(t.hour * 3600 + t.minute * 60 + t.second)
+    idate = int(f'{t.year}{t.strftime("%j")}')
+    utsec = (t.hour * 3600 + t.minute * 60 + t.second)
 
     return idate, utsec

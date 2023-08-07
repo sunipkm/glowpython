@@ -135,7 +135,7 @@ data b1/1.0, 0.0138, 0.005/, b2/1.0, 0.59425, 0.3811/
 ! Hinteregger contrast ratio method:
 
 if (iscale == 0) then
-  if (islast /= iscale) then
+  ! if (islast /= iscale) then
     filepath = trim(data_dir)//'ssflux_hint.dat'
     open(newunit=u,file=filepath,status='old',action='read')
     read(u,*)
@@ -143,7 +143,7 @@ if (iscale == 0) then
       read(u,*) waves(l),wavel(l),rflux(l),scale1(l),scale2(l)
     enddo
     close(u)
-  endif
+  ! endif
 !
   r1 =  b1(1) + b1(2)*(f107a-71.5) + b1(3)*(f107-f107a+3.9)
   r2 =  b2(1) + b2(2)*(f107a-71.5) + b2(3)*(f107-f107a+3.9)
@@ -159,7 +159,7 @@ endif
 ! EUVAC Method:
 
 if (iscale == 1) then
-  if (islast /= iscale) then
+  ! if (islast /= iscale) then
     filepath = trim(data_dir)//'ssflux_euvac.dat'
     open(newunit=u,file=filepath,status='old',action='read')
     read(u,*)
@@ -167,7 +167,7 @@ if (iscale == 1) then
       read(u,*) waves(l),wavel(l),rflux(l),a(l)
     enddo
     close(u)
-  endif
+  ! endif
 
 p107 = (f107+f107a)/2.
 
@@ -182,7 +182,7 @@ endif
 ! User-supplied data:
 
 if (iscale == 2) then
-  if (islast /= iscale) then
+  ! if (islast /= iscale) then
     filepath = trim(data_dir)//'ssflux_user.dat'
     open(newunit=u,file=filepath,status='old',action='read')
     read(u,*)
@@ -190,7 +190,7 @@ if (iscale == 2) then
       read(u,*) waves(l),wavel(l),uflux(l)
     enddo
     close(u)
-  endif
+  ! endif
   do l=1,lmax
     sflux(l)=uflux(l)
   enddo
