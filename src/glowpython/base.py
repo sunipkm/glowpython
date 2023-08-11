@@ -3,7 +3,7 @@ from typing import Iterable, SupportsFloat as Numeric
 import atexit
 
 from . import fortran
-from .fortran import cglow, wrap_egrid, cglow as cg, mzgrid, maxt, glow, conduct
+from .fortran import cglow, cglow as cg, mzgrid, maxt, glow, conduct
 
 import xarray
 from xarray import Dataset, Variable
@@ -52,10 +52,6 @@ def reset_cglow(jmax=None) -> None:
     release_cglow()
     init_cglow(jmax)
 
-def set_egrid(ds: Dataset) -> None:
-    'Initialize E and dE in both fortran.cglow and ds.'
-    ds.E.data, ds.dE.data = fortran.wrap_egrid()
-
 def set_standard_switches(iscale: int=1, xuvfac: Numeric = 3, kchem: int = 4, jlocal: int = 0, itail: int = 0, fmono: int = 0, emono: int = 0) -> None:
     'Set `cglow` switches to standard values.'
     reinit = False
@@ -78,7 +74,7 @@ def runglow() -> None:
     cglow.zz = cglow.z * 1e5
     fortran.glow()
 
-def generic(time: datetime, glat: Numeric, glon: Numeric, Nbins: int, Q: Numeric = None, Echar: Numeric = None, *, geomag_params: dict | Iterable = None, tzaware: bool = False, jmax: int = 250) -> xarray.Dataset:
+def generic(time: datetime, glat: Numeric, glon: Numeric, Nbins: int, Q: Numeric = None, Echar: Numeric = None, *, geomag_params: dict | Iterable = None, tzaware: bool = False, jmax: int = 250, metadata = None) -> xarray.Dataset:
     """GLOW model with optional electron precipitation assuming Maxwellian distribution.
     Defaults to no precipitation.
 
@@ -285,8 +281,6 @@ def generic(time: datetime, glat: Numeric, glon: Numeric, Nbins: int, Q: Numeric
     ds.coords['wave2'] = ('wave', cg.wave2, wave_attrs)
     ds.coords['wave2'].attrs['comment'] = 'shortwave edge of solar flux wavelength range'
 
-    reset_cglow()
-
     ds.attrs["geomag_params"] = ip
     if Q is not None and Echar is not None:
         ds.attrs['precip'] = {'Q': Q, 'Echar': Echar}
@@ -294,6 +288,9 @@ def generic(time: datetime, glat: Numeric, glon: Numeric, Nbins: int, Q: Numeric
         ds.attrs['precip'] ={'Q': 0, 'Echar': 0}
     ds.attrs["time"] = time.isoformat()
     ds.attrs["glatlon"] = (glat, glon)
+
+    if metadata is not None:
+        ds.attrs["metadata"] = metadata
 
     # ds.ver.loc[dict(wavelength='5577')].plot()
     # plt.show()

@@ -43,7 +43,6 @@ glow = Extension(
         "iri90.f",
         "nrlmsise00.f"
     ]] + [os.path.join('src', 'tweaks', file) for file in [
-        "wrap_egrid.f90",
         "cglow_release.f90"
     ]],
     extra_f77_compile_args=["-std=legacy"]

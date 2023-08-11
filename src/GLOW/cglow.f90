@@ -53,11 +53,11 @@ module cglow
 
 !! Array dimensions, configurable:
 
-  integer :: jmax                  ! number of vertical levels
-  integer,parameter :: nbins = 250 ! number of energetic electron energy bins
-
-!! Array dimensions, non-configurable:
-
+  integer :: jmax                ! number of vertical levels
+  
+  !! Array dimensions, non-configurable:
+  
+  integer,parameter :: nbins=250 ! number of energetic electron energy bins
   integer,parameter :: lmax=123  ! number of wavelength intervals for solar flux
   integer,parameter :: nmaj=3    ! number of major species
   integer,parameter :: nst=6     ! number of states produced by photoionization/dissociation
