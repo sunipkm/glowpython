@@ -69,14 +69,14 @@
 subroutine ephoto_init
 
   use cglow,only: nbins,lmax,nmaj,nst
-  use cglow,only: wave1,wave2,epsil1,epsil2,sigion,sigabs
+  use cglow,only: wave1,wave2,epsil1,epsil2,sigion,sigabs,ephoto_prob
   use cglow,only: data_dir
 
   implicit none
   save
 
   integer :: nnn(nmaj)
-  real ::   tpot(nst,nmaj), ephoto_prob(nst,nmaj,lmax), &
+  real ::   tpot(nst,nmaj), &
             sigao(lmax), sigao2(lmax), sigan2(lmax), &
             sigio(lmax), sigio2(lmax), sigin2(lmax), &
             probo(nst,lmax), probo2(nst,lmax), probn2(nst,lmax), &
