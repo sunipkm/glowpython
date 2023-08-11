@@ -1,5 +1,6 @@
 from __future__ import annotations
 from typing import Iterable, SupportsFloat as Numeric
+import atexit
 
 from . import fortran
 from .fortran import cglow, wrap_egrid, cglow as cg, mzgrid, maxt, glow, conduct
@@ -14,30 +15,36 @@ from os import path
 
 import matplotlib.pyplot as plt
 
-__CGLOW_INIT__ = False
+DATA_DIR = path.join(path.dirname(__file__), 'data', '')
+IRI90_DIR = path.join(DATA_DIR, 'iri90/')
 
-IRI90_DIR = path.join(path.dirname(__file__), 'data', 'iri90/')
+cglow.jmax = 0 # initialize this to zero
 
 def init_cglow(jmax: int) -> None:
     'Initialize cglow variables.'
-    global __CGLOW_INIT__
-    if __CGLOW_INIT__:
-        # raise RuntimeError("cglow_init has already been called!")
+    if cglow.jmax == jmax: # no reallocation required
+        return
+    if cglow.jmax != jmax and cglow.jmax != 0: # reallocation required
         release_cglow()
-        init_cglow(jmax)
-    else:
-        data_dir = path.join(path.dirname(__file__), 'data', '')
-        cglow.data_dir.put(0, '{: <1024s}'.format(data_dir))
-        cglow.jmax = jmax
-        cglow.cglow_init()
-        __CGLOW_INIT__ = True
+    cglow.jmax = jmax
+    cglow.data_dir.put(0, '{: <1024s}'.format(DATA_DIR))
+    cglow.cglow_init()
+    # global __CGLOW_INIT__
+    # if __CGLOW_INIT__:
+    #     # raise RuntimeError("cglow_init has already been called!")
+    #     release_cglow()
+    #     init_cglow(jmax)
+    # else:
+    #     cglow.data_dir.put(0, '{: <1024s}'.format(DATA_DIR))
+    #     cglow.jmax = jmax
+    #     cglow.cglow_init()
+    #     __CGLOW_INIT__ = True
 
+@atexit.register
 def release_cglow():
-    global __CGLOW_INIT__
     # Deallocate all allocatable cglow arrays
     fortran.cglow_release()
-
-    __CGLOW_INIT__ = False
+    cglow.jmax = 0
 
 def reset_cglow(jmax=None) -> None:
     if jmax is None:
@@ -49,15 +56,22 @@ def set_egrid(ds: Dataset) -> None:
     'Initialize E and dE in both fortran.cglow and ds.'
     ds.E.data, ds.dE.data = fortran.wrap_egrid()
 
-def set_standard_switches() -> None:
+def set_standard_switches(iscale: int=1, xuvfac: Numeric = 3, kchem: int = 4, jlocal: int = 0, itail: int = 0, fmono: int = 0, emono: int = 0) -> None:
     'Set `cglow` switches to standard values.'
-    cglow.iscale = 1
-    cglow.xuvfac = 3
-    cglow.kchem = 4
-    cglow.jlocal = 0
-    cglow.itail = 0
-    cglow.fmono = 0
-    cglow.emono = 0
+    reinit = False
+    if cglow.jmax != 0 and cglow.iscale != iscale: # re-initialization required
+        reinit = True
+        
+    cglow.iscale = iscale
+    cglow.xuvfac = xuvfac
+    cglow.kchem = kchem
+    cglow.jlocal = jlocal
+    cglow.itail = itail
+    cglow.fmono = fmono
+    cglow.emono = emono
+
+    if reinit:
+        reset_cglow()
 
 def runglow() -> None:
     'Make sure `cglow.zz` is set before running subroutine `glow`'
@@ -193,7 +207,7 @@ def generic(time: datetime, glat: Numeric, glon: Numeric, Nbins: int, Q: Numeric
     ds['O+']       = Variable('alt_km', copy(cg.zxden[2,:]),  density_attrs)
     ds['O2+']      = Variable('alt_km', copy(cg.zxden[5,:]),  density_attrs)
     ds['NO+']      = Variable('alt_km', copy(cg.zxden[6,:]),  density_attrs)
-    ds['N2D']      = Variable('alt_km', copy(cg.zxden[9,:]), density_attrs)
+    ds['N2D']      = Variable('alt_km', copy(cg.zxden[9,:]),  density_attrs)
     ds['pederson'] = Variable('alt_km', pedcond,      {'units': 'S m^{-1}'})
     ds['hall']     = Variable('alt_km', hallcond,     {'units': 'S m^{-1}'})
 

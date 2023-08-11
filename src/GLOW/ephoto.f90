@@ -70,28 +70,21 @@ subroutine ephoto
 
   use cglow,only: jmax,nbins,lmax,nmaj,nst
   use cglow,only: wave1,wave2,phono,photoi,photod,pespec,zcol,sflux
+  use cglow,only: sigabs,sigion,epsil1,epsil2,ephoto_prob
   use cglow,only: zmaj,edel,ener,zno
-  use cglow,only: data_dir
 
   implicit none
   save
 
   integer :: nnn(nmaj)
   real ::   dspect(jmax), flux(lmax,jmax), &
-            sigion(nmaj,lmax), sigabs(nmaj,lmax), &
-            tpot(nst,nmaj), prob(nst,nmaj,lmax), &
-            epsil1(nst,nmaj,lmax), epsil2(nst,nmaj,lmax), &
-            sigao(lmax), sigao2(lmax), sigan2(lmax), &
-            sigio(lmax), sigio2(lmax), sigin2(lmax), &
-            probo(nst,lmax), probo2(nst,lmax), probn2(nst,lmax), &
+            tpot(nst,nmaj), &
             bso2(lmax), auge(nmaj), augl(nmaj), tau(lmax), &
             rion(lmax,nmaj,jmax)
 
   real,parameter :: signo = 2.0e-18
-  integer :: ifirst=1
   integer :: l,n,k,i,j,m,m1,m2
-  real :: aa,bb,fac,e1,e2,y,r1,r2
-  character(len=1024) :: filepath
+  real :: fac,e1,e2,y,r1,r2
 
   nnn = (/5,4,6/)
   tpot(1:nst,1) = (/13.61, 16.93, 18.63, 28.50, 40.00,  0.00/)
@@ -107,77 +100,6 @@ subroutine ephoto
   bso2(30:34) = .03
   bso2(35:39) = .01
   bso2(40:lmax) = 0.
-
-! First time only: Read cross section data from files, convert to cm2,
-! calculate energy losses:
-
-  if (ifirst == 1) then
-    ifirst = 0
-
-    filepath = trim(data_dir)//'ephoto_xn2.dat'
-    open(unit=1,file=filepath,status='old',action='read')
-    read(1,*)
-    read(1,*)
-    read(1,*)
-    read(1,*)
-    do l=lmax,1,-1
-      read(1,*) aa,bb,(probn2(n,l),n=1,nst),sigin2(l),sigan2(l)
-    enddo
-    close(1)
-
-    filepath = trim(data_dir)//'ephoto_xo2.dat'
-    open(unit=1,file=filepath,status='old',action='read')
-    read(1,*)
-    read(1,*)
-    read(1,*)
-    read(1,*)
-    do l=lmax,1,-1
-      read(1,*) aa,bb,(probo2(n,l),n=1,nst),sigio2(l),sigao2(l)
-    enddo
-    close(1)
-
-    filepath = trim(data_dir)//'ephoto_xo.dat'
-    open(unit=1,file=filepath,status='old',action='read')
-    read(1,*)
-    read(1,*)
-    read(1,*)
-    read(1,*)
-    do l=lmax,1,-1
-      read(1,*) aa,bb,(probo(n,l),n=1,nst),sigio(l),sigao(l)
-    enddo
-    close(1)
-
-    do l=1,lmax
-      sigabs(1,l) = sigao(l)  * 1.e-18
-      sigabs(2,l) = sigao2(l) * 1.e-18
-      sigabs(3,l) = sigan2(l) * 1.e-18
-      sigion(1,l) = sigio(l)  * 1.e-18
-      sigion(2,l) = sigio2(l) * 1.e-18
-      sigion(3,l) = sigin2(l) * 1.e-18
-    enddo
-
-    do l=1,lmax
-      do k=1,nst
-        prob(k,1,l) = probo(k,l)
-        prob(k,2,l) = probo2(k,l)
-        prob(k,3,l) = probn2(k,l)
-      enddo
-    enddo
-
-    do l=1,lmax 
-      do i=1,nmaj 
-        do k=1,nnn(i) 
-          epsil1(k,i,l)=12397.7/wave1(l)-tpot(k,i) 
-          epsil2(k,i,l)=12397.7/wave2(l)-tpot(k,i) 
-          if (wave1(l) <= augl(i)) then
-            epsil1(k,i,l) = epsil1(k,i,l) - auge(i)
-            epsil2(k,i,l) = epsil2(k,i,l) - auge(i)
-          endif
-        enddo
-      enddo
-    enddo 
-
-  endif       ! end of first-time-only conditional
 
 ! Zero arrays:
 
@@ -240,7 +162,7 @@ subroutine ephoto
 
           if (e1 < 0.) e1=0. 
           do j=1,jmax
-            dspect(j) = rion(l,i,j)*prob(k,i,l) 
+            dspect(j) = rion(l,i,j)*ephoto_prob(k,i,l) 
             photoi(k,i,j) = photoi(k,i,j) + dspect(j)
           enddo
 

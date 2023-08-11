@@ -53,8 +53,8 @@ module cglow
 
 !! Array dimensions, configurable:
 
-  integer :: jmax                ! number of vertical levels
-  integer,parameter :: nbins = 250              ! number of energetic electron energy bins
+  integer :: jmax                  ! number of vertical levels
+  integer,parameter :: nbins = 250 ! number of energetic electron energy bins
 
 !! Array dimensions, non-configurable:
 
@@ -80,10 +80,13 @@ module cglow
     ztn, zti, zte, eheat, tez, ecalc, tei, tpi, tir
   real(wp),allocatable,dimension(:)     :: phitop, ener, edel           ! (nbins)
   real,allocatable,dimension(:)     :: wave1, wave2, sflux         ! (lmax)
+  real,allocatable,dimension(:)     :: sf_rflux, sf_scale1, sf_scale2 ! (lmax)
   real,allocatable,dimension(:,:)   :: pespec, sespec, uflx, dflx  ! (nbins,jmax)
   real,allocatable,dimension(:,:)   :: zmaj, zcol, pia, sion       ! (nmaj,jmax)
   real,allocatable,dimension(:,:,:) :: photoi, photod              ! (nst,nmaj,jmax)
   real,allocatable,dimension(:,:)   :: phono                       ! (nst,jmax)
+  real,allocatable,dimension(:,:,:) :: epsil1, epsil2, ephoto_prob ! (nst,nmaj,lmax)
+  real,allocatable,dimension(:,:)   :: sigion, sigabs              ! (nmaj,lmax)
   real,allocatable,dimension(:,:,:) :: aglw                        ! (nei,nmaj,jmax)
   real,allocatable,dimension(:,:)   :: zxden                       ! (nex,jmax)
   real(wp),allocatable,dimension(:,:)   :: zeta                        ! (nw,jmax)
@@ -139,10 +142,13 @@ module cglow
     if (.not.allocated(ener)) allocate(ener(nbins))
     if (.not.allocated(edel)) allocate(edel(nbins))
 
-    allocate          &
-      (wave1(lmax),   &
-       wave2(lmax),   &
-       sflux(lmax))
+    allocate           &
+      (wave1(lmax),    &
+       wave2(lmax),    &
+       sflux(lmax),    &
+       sf_rflux(lmax),    &
+       sf_scale1(lmax),&
+       sf_scale2(lmax))
 
     allocate               &
       (pespec(nbins,jmax), &
@@ -160,6 +166,11 @@ module cglow
       (aglw  (nei,nmaj,jmax), &
        photoi(nst,nmaj,jmax), &
        photod(nst,nmaj,jmax), &
+       epsil1(nst,nmaj,lmax), &
+       epsil2(nst,nmaj,lmax), &
+       ephoto_prob(nst,nmaj,lmax), &
+       sigion(nmaj,lmax),     &
+       sigabs(nmaj,lmax),     &
        phono(nst,jmax))
 
     allocate             &
@@ -260,6 +271,9 @@ module cglow
        tb  (:,:)    =0.
        gams(:,:)    =0.
        gamb(:,:)    =0.
+
+       call ssflux_init(iscale) ! initialize ssflux
+       call ephoto_init()       ! initialize ephoto
 
   end subroutine cglow_init
 

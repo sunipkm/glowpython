@@ -24,6 +24,7 @@ glow = Extension(
         "bands.f90",
         "conduct.f90",
         "egrid.f90",
+        "ephoto_init.f90",
         "ephoto.f90",
         "etrans.f90",
         "exsect.f",
@@ -37,6 +38,7 @@ glow = Extension(
         "snoem.f90",
         "snoemint.f90",
         "solzen.f90",
+        "ssflux_init.f90",
         "ssflux.f90",
         "iri90.f",
         "nrlmsise00.f"

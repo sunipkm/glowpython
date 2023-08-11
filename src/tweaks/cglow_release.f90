@@ -33,6 +33,9 @@ subroutine cglow_release
   if (allocated (wave1)) deallocate (wave1)
   if (allocated (wave2)) deallocate (wave2)
   if (allocated (sflux)) deallocate (sflux)
+  if (allocated (sf_rflux)) deallocate (sf_rflux)
+  if (allocated (sf_scale1)) deallocate (sf_scale1)
+  if (allocated (sf_scale2)) deallocate (sf_scale2)
 
   if (allocated (pespec)) deallocate (pespec)
   if (allocated (sespec)) deallocate (sespec)
@@ -48,6 +51,11 @@ subroutine cglow_release
   if (allocated (photoi)) deallocate (photoi)
   if (allocated (photod)) deallocate (photod)
   if (allocated (phono)) deallocate (phono)
+  if (allocated (epsil1)) deallocate (epsil1)
+  if (allocated (epsil2)) deallocate (epsil2)
+  if (allocated (ephoto_prob)) deallocate (ephoto_prob)
+  if (allocated (sigion)) deallocate (sigion)
+  if (allocated (sigabs)) deallocate (sigabs)
 
   if (allocated (sigs)) deallocate (sigs)
   if (allocated (pe)) deallocate (pe)
