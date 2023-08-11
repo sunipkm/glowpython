@@ -151,7 +151,7 @@
 
 ! Scale solar flux:
 
-      call ssflux (iscale, f107, f107a, xuvfac, wave1, wave2, sflux)
+      call ssflux (iscale, f107, f107a, xuvfac, sflux)
 
 ! Pack major species density array:
 
