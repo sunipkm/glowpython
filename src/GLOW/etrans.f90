@@ -90,7 +90,7 @@
 ! First call only:  calculate cross-sectons:
 !
     ! if (ifirst == 1) then
-      call exsect (ener, edel)
+      ! call exsect (ener, edel)
       ! ifirst = 0
     ! endif
 !

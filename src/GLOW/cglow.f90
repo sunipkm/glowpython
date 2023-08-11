@@ -282,6 +282,8 @@ module cglow
 
        call ssflux_init(iscale) ! initialize ssflux
        call ephoto_init()       ! initialize ephoto
+       call egrid(ener, edel, nbins) ! initialize energy grid
+       call EXSECT(ener, edel) ! call exsect
 
   end subroutine cglow_init
 

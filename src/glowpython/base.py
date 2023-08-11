@@ -137,7 +137,7 @@ def generic(time: datetime, glat: Numeric, glon: Numeric, Nbins: int, Q: Numeric
 
     set_standard_switches()
     init_cglow(jmax)
-    wrap_egrid()
+    # wrap_egrid()
 
     (cg.idate, cg.ut, cg.glat, cg.glong, cg.f107a,
         cg.f107, cg.f107p, cg.ap, cg.ef, cg.ec) = \
