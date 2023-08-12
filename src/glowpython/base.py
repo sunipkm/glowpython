@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import Iterable, SupportsFloat as Numeric
 import atexit
+import warnings
 
 from . import fortran
 from .fortran import cglow, cglow as cg, mzgrid, maxt, glow, conduct
@@ -19,14 +20,23 @@ DATA_DIR = path.join(path.dirname(__file__), 'data', '')
 IRI90_DIR = path.join(DATA_DIR, 'iri90/')
 
 cglow.jmax = 0 # initialize this to zero
+cglow.nbins = 0 # initialize this to zero
 
-def init_cglow(jmax: int) -> None:
-    'Initialize cglow variables.'
-    if cglow.jmax == jmax: # no reallocation required
+def init_cglow(jmax: int, nbins: int, force_realloc: bool = False) -> None:
+    """Initialize FORTRAN CGLOW module.
+
+    Args:
+        jmax (int): Number of altitude bins.
+        nbins (int): Number of energy bins.
+        force_realloc (bool, optional): Force reallocation of FORTRAN arrays. Defaults to False.
+    """
+    if force_realloc: release_cglow()
+    if cglow.jmax == jmax and cglow.nbins == nbins: # no reallocation required
         return
-    if cglow.jmax != jmax and cglow.jmax != 0: # reallocation required
+    if (cglow.jmax != jmax or cglow.nbins != nbins) and (cglow.nbins != 0 and cglow.jmax != 0): # reallocation required
         release_cglow()
     cglow.jmax = jmax
+    cglow.nbins = nbins
     cglow.data_dir.put(0, '{: <1024s}'.format(DATA_DIR))
     cglow.cglow_init()
     # global __CGLOW_INIT__
@@ -42,27 +52,74 @@ def init_cglow(jmax: int) -> None:
 
 @atexit.register
 def release_cglow():
-    # Deallocate all allocatable cglow arrays
+    'Deallocate all allocatable cglow arrays'
     fortran.cglow_release()
     cglow.jmax = 0
+    cglow.nbins = 0
 
-def reset_cglow(jmax=None) -> None:
+def reset_cglow(jmax: int=None, nbins: int=None) -> None:
+    """Reset CGLOW module and reallocate all arrays.
+
+    Args:
+        jmax (int, optional): Number of altitude bins. Defaults to None, uses previous value from CGLOW.
+        nbins (int, optional): Number of energy bins. Defaults to None, uses previous value from CGLOW.
+
+    Raises:
+        ValueError: jmax OR nbins is zero, which is an impossible state.
+    """
     if jmax is None:
         jmax = cglow.jmax
+    if nbins is None:
+        nbins = cglow.nbins
+    if jmax == 0 and nbins == 0:
+        warnings.warn('jmax or nbins is zero, nothing to reset', RuntimeWarning)
+        return
+    if jmax == 0 or nbins == 0:
+        raise ValueError('jmax or nbins is zero, cannot reset, impossible state')
     release_cglow()
-    init_cglow(jmax)
+    init_cglow(jmax, nbins)
 
-def set_standard_switches(iscale: int=1, xuvfac: Numeric = 3, kchem: int = 4, jlocal: int = 0, itail: int = 0, fmono: int = 0, emono: int = 0) -> None:
-    'Set `cglow` switches to standard values.'
+def set_standard_switches(iscale: int=1, xuvfac: Numeric = 3, kchem: int = 4, jlocal: bool = False, itail: bool = False, fmono: Numeric = 0, emono: Numeric = 0) -> None:
+    """Set standard switches for CGLOW model.
+
+    Args:
+        iscale (int, optional): Solar flux model. Defaults to 1 (EUVAC model). 
+        Use 0 for Hinteregger, and 2 for user-supplied solar flux model. 
+        In that case, `data/ssflux_user.dat` must be contain the user-supplied solar flux model.
+
+        xuvfac (Numeric, optional): XUV enhancement factor. Defaults to 3.
+
+        kchem (int, optional): CGLOW chemical calculations. Defaults to 4.
+        `kchem = 0: no calculations at all are performed.`
+        `kchem = 1: electron density, O+(4S), N+, N2+, O2+, NO+ supplied at all altitudes; O+(2P), O+(2D), excited neutrals, and emission rates are calculated.`
+        `kchem = 2: electron density, O+(4S), N+, N2+, O2+, NO+ supplied at all altitudes; O+(2P), O+(2D), excited neutrals, and emission rates are calculated.`
+        `kchem = 3: electron density supplied at all altitudes; everything else calculated.  Note that this may violate charge neutrality and/or lead to other unrealistic results below 200 km, if the electron density supplied is significantly different from what the model thinks it should be.  If it is desired to use a specified ionosphere, KCHEM=2 is probably a better option.`
+        `kchem = 4: electron density supplied above 200 km; electron density below 200 km is calculated, everything else calculated at all altitudes. Electron density for the next two levels above J200 is log interpolated between E(J200) and E(J200+3).`
+
+        jlocal (bool, optional): Set to False for electron transport calculations, set to True for local calculations only. Defaults to False.
+        itail (bool, optional): Disable/enable low-energy tail. Defaults to False.
+        fmono (float, optional): Monoenergetic energy flux, erg/cm^2. Defaults to 0.
+        emono (float, optional): Monoenergetic characteristic energy, keV. Defaults to 0.
+
+    Raises:
+        ValueError: iscale must be between 0 and 2.
+        ValueError: kchem must be between 0 and 4.
+    """
     reinit = False
-    if cglow.jmax != 0 and cglow.iscale != iscale: # re-initialization required
+    if cglow.jmax != 0 and cglow.nbins != 0 and cglow.iscale != iscale: # re-initialization required
         reinit = True
-        
+
+    if iscale < 0 or iscale > 2:
+        raise ValueError('iscale must be between 0 and 2')
+
+    if kchem < 0 or kchem > 4:
+        raise ValueError('kchem must be between 0 and 4')
+
     cglow.iscale = iscale
     cglow.xuvfac = xuvfac
     cglow.kchem = kchem
-    cglow.jlocal = jlocal
-    cglow.itail = itail
+    cglow.jlocal = 1 if jlocal else 0
+    cglow.itail = 1 if itail else 0
     cglow.fmono = fmono
     cglow.emono = emono
 
@@ -74,7 +131,7 @@ def runglow() -> None:
     cglow.zz = cglow.z * 1e5
     fortran.glow()
 
-def generic(time: datetime, glat: Numeric, glon: Numeric, Nbins: int, Q: Numeric = None, Echar: Numeric = None, *, geomag_params: dict | Iterable = None, tzaware: bool = False, jmax: int = 250, metadata = None) -> xarray.Dataset:
+def generic(time: datetime, glat: Numeric, glon: Numeric, Nbins: int, Q: Numeric = None, Echar: Numeric = None, *, geomag_params: dict | Iterable = None, tzaware: bool = False, jmax: int = 250, metadata = None, iscale: int=1, xuvfac: Numeric = 3, kchem: int = 4, jlocal: bool = False, itail: bool = False, fmono: float = 0, emono: float = 0) -> xarray.Dataset:
     """GLOW model with optional electron precipitation assuming Maxwellian distribution.
     Defaults to no precipitation.
 
@@ -84,9 +141,18 @@ def generic(time: datetime, glat: Numeric, glon: Numeric, Nbins: int, Q: Numeric
         glon (Numeric): Location longitude.
         Q (Numeric, optional): Flux of precipitating electrons. Setting to None or < 0.001 makes it equivalent to no-precipitation. Defaults to None.
         Echar (Numeric, optional): Energy of precipitating electrons. Setting to None or < 1 makes it equivalent to no-precipitation. Defaults to None.
-        Nbins (int): Number of energy bins (unused, set to 250).
+        Nbins (int): Number of energy bins (must be >= 10).
         geomag_params (dict | Iterable, optional): Custom geomagnetic parameters 'f107a' (average f10.7 over 81 days), 'f107' (current day f10.7), 'f107p' (previous day f10.7) and 'Ap' (the global 3 hour ap index). Must be present in this order for list or tuple, and use these keys for the dictionary. Defaults to None.
         tzaware (bool, optional): If time is time zone aware. If true, `time` is recast to 'UTC' using `time.astimezone(pytz.utc)`.
+        jmax (int, optional): Maximum number of altitude levels. Defaults to 250.
+        metadata (dict, optional): Metadata to be added to the output dataset. Defaults to None.
+        iscale (int, optional): Solar flux model. Defaults to 1 (EUVAC model).
+        xuvfac (Numeric, optional): XUV enhancement factor. Defaults to 3.
+        kchem (int, optional): CGLOW chemical calculations. Defaults to 4. See `cglow.kchem` for details.
+        jlocal (bool, optional): Set to False for electron transport calculations, set to True for local calculations only. Defaults to False.
+        itail (bool, optional): Disable/enable low-energy tail. Defaults to False.
+        fmono (float, optional): Monoenergetic energy flux, erg/cm^2. Defaults to 0.
+        emono (float, optional): Monoenergetic characteristic energy, keV. Defaults to 0.
 
     Raises:
         RuntimeError: Invalid type for geomag_params.
@@ -96,6 +162,9 @@ def generic(time: datetime, glat: Numeric, glon: Numeric, Nbins: int, Q: Numeric
     Returns:
         xarray.Dataset: GLOW model output dataset.
     """
+    if Nbins < 10:
+        raise ValueError("Number of energy bins must be >= 10")
+    
     if tzaware:
         time = time.astimezone(pytz.utc)
 
@@ -131,8 +200,8 @@ def generic(time: datetime, glat: Numeric, glon: Numeric, Nbins: int, Q: Numeric
     ip['ap'] = (ap)
 
 
-    set_standard_switches()
-    init_cglow(jmax)
+    set_standard_switches(iscale, xuvfac, kchem, jlocal, itail, fmono, emono)
+    init_cglow(jmax, Nbins)
     # wrap_egrid()
 
     (cg.idate, cg.ut, cg.glat, cg.glong, cg.f107a,
@@ -306,7 +375,7 @@ def maxwellian(time: datetime, glat: Numeric, glon: Numeric, Nbins: int, Q: Nume
         glon (Numeric): Location longitude.
         Q (Numeric): Flux of precipitating electrons.
         Echar (Numeric): Energy of precipitating electrons.
-        Nbins (int): Number of energy bins (unused, set to 250).
+        Nbins (int): Number of energy bins (must be >= 10).
         geomag_params (dict | Iterable, optional): Custom geomagnetic parameters 'f107a' (average f10.7 over 81 days), 'f107' (current day f10.7), 'f107p' (previous day f10.7) and 'Ap' (the global 3 hour ap index). Must be present in this order for list or tuple, and use these keys for the dictionary. Defaults to None.
         tzaware (bool, optional): If time is time zone aware. If true, `time` is recast to 'UTC' using `time.astimezone(pytz.utc)`.
 
@@ -327,7 +396,7 @@ def no_precipitation(time: datetime, glat: Numeric, glon: Numeric, Nbins: int, *
         time (datetime): Model evaluation time.
         glat (Numeric): Location latitude.
         glon (Numeric): Location longitude.
-        Nbins (int): Number of energy bins (unused, set to 250).
+        Nbins (int): Number of energy bins (must be >= 10).
         geomag_params (dict | Iterable, optional): Custom geomagnetic parameters 'f107a' (average f10.7 over 81 days), 'f107' (current day f10.7), 'f107p' (previous day f10.7) and 'Ap' (the global 3 hour ap index). Must be present in this order for list or tuple, and use these keys for the dictionary. Defaults to None.
         tzaware (bool, optional): If time is time zone aware. If true, `time` is recast to 'UTC' using `time.astimezone(pytz.utc)`.
 

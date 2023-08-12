@@ -53,11 +53,11 @@ module cglow
 
 !! Array dimensions, configurable:
 
-  integer :: jmax                ! number of vertical levels
+  integer :: jmax=0              ! number of vertical levels
+  integer :: nbins=0             ! number of energetic electron energy bins
   
   !! Array dimensions, non-configurable:
   
-  integer,parameter :: nbins=250 ! number of energetic electron energy bins
   integer,parameter :: lmax=123  ! number of wavelength intervals for solar flux
   integer,parameter :: nmaj=3    ! number of major species
   integer,parameter :: nst=6     ! number of states produced by photoionization/dissociation
@@ -283,7 +283,7 @@ module cglow
        call ssflux_init(iscale) ! initialize ssflux
        call ephoto_init()       ! initialize ephoto
        call egrid(ener, edel, nbins) ! initialize energy grid
-       call EXSECT(ener, edel) ! call exsect
+       call EXSECT(ener, edel, nbins) ! call exsect
 
   end subroutine cglow_init
 

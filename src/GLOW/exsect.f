@@ -49,15 +49,16 @@ C NMAJ   number of major species
 C NEI    number of slots for excited and ionized states
 C
 C
-      SUBROUTINE EXSECT (ENER, EDEL)
+      SUBROUTINE EXSECT (ENER, EDEL, NBINS)
 C
-      use cglow,only: NMAJ,NEI,NBINS
+      use cglow,only: NMAJ,NEI
       use cglow,only: WW,AO,OMEG,ANU,BB,AUTO,THI,AK,AJ,TS,TA,TB,GAMS, ! /CXPARS/
      |                GAMB
       use cglow,only: SIGS,PE,PIN,SIGEX,SIGIX,SIGA,SEC,SIGA,IIMAXX    ! /CXSECT/
 C
       implicit none
 C
+      integer,intent(in) :: NBINS
       real,intent(in) :: ENER(NBINS), EDEL(NBINS)
 C
       real ::   SIGI(NBINS), T12(NBINS), RATIO(NBINS), 
@@ -342,7 +343,7 @@ C
 C
 C Obtain high-energy correction factors:
 C
-      CALL HEXC(ENER,SIGIX,RATIO)
+      CALL HEXC(ENER,SIGIX,RATIO,NBINS)
       DO 142 J=1,NBINS
         DO 142 I=1,NMAJ
           DO 142 K=1,NEI
@@ -387,7 +388,7 @@ C
       SIGG = SIGEX(J,I,JY)
       ETA = ETJ - WW(J,I)
       IF (ETA .GT. 0.) THEN
-        IE = INV (ETA,JY,ENER)
+        IE = INV (ETA,JY,ENER,NBINS)
         IEE = IE - 1
         IF (IEE .LT. 1) IEE=IE
         K = JY - IE
@@ -415,7 +416,7 @@ C           SIGA(I,K,JY) = SIGA(I,K,JY) + SIGG * 2.*ETA*DETJ/EDEL(1)**2
           ENDIF
           WAG=WW(J,I)-THI(1,I)
           IF (WAG .GT. 0. .AND. AUTO(J,I) .GT. 0.) THEN
-            IBZ = INV (WAG,JY,ENER)
+            IBZ = INV (WAG,JY,ENER,NBINS)
             SEC(I,IBZ,JY) = SEC(I,IBZ,JY)+SIGG
      >              *(DETJ/EDEL(IBZ))*AUTO(J,I)
             IF(IBZ.GE.KUK1)KUK1=IBZ
@@ -443,7 +444,7 @@ C
       TMAX = (ETJ-WAG) / 2.
       if (tmax .gt. 1.e6) tmax=1.e6
       IF (TMAX .LE. 0.) GOTO 300
-      ITMAX = INV (TMAX,JY,ENER)
+      ITMAX = INV (TMAX,JY,ENER,NBINS)
       IF (ITMAX .GE. KUK1) KUK1 = ITMAX + 1
       TMT = ENER(1) + EDEL(1) / 2.0
       IF (TMAX .LT. TMT) TMT = TMAX
@@ -468,7 +469,7 @@ C
       WTH1 = T12(II) + WAG
       ETA = ETJ - WTH1
       IF (ETA .GT. 0.) THEN
-        IE = INV (ETA,JY,ENER)
+        IE = INV (ETA,JY,ENER,NBINS)
         IEE = IE - 1
         K = JY - IE
         KK = JY - IEE
@@ -561,10 +562,10 @@ C
 C Function INV finds the bin number closest to energy ETA on grid ENER.
 C Bin INV or INV-1 will contain ETA.
 C
-      INTEGER FUNCTION INV (ETA, JY, ENER)
-      use cglow,only: NBINS
+      INTEGER FUNCTION INV (ETA, JY, ENER, NBINS)
       implicit none
 C
+      integer,intent(in) :: NBINS
       real,intent(in) :: ETA,ENER(NBINS)
       integer,intent(in) :: JY
 C
@@ -603,10 +604,11 @@ C   Rieke and Prepejchal, Phys. Rev. A, 6, 1507, 1990.
 C   Saksena et al., Int. Jour. of Mass Spec. & Ion Proc., 171, L1, 1997.
 
 
-      SUBROUTINE HEXC(ENER,SIGIX,RATIO)
-      use cglow,only: NEI,NMAJ,NBINS
+      SUBROUTINE HEXC(ENER,SIGIX,RATIO,NBINS)
+      use cglow,only: NEI,NMAJ
       implicit none
 C
+      integer,intent(in) :: NBINS
       real,intent(in) :: ENER(NBINS),SIGIX(NEI,NMAJ,NBINS)
       real,intent(out) :: RATIO(NBINS)
 C
