@@ -12,7 +12,7 @@
 
     subroutine snoem(doy, kp, f107, z, mlat, nozm)
 
-      use cglow,only: data_dir
+      use cglow,only: snoem_zin, snoem_mlatin, snoem_no_mean, snoem_eofs
 
       implicit none
 
@@ -20,30 +20,11 @@
       real,intent(in) :: kp, f107
       real,intent(out) :: z(16), mlat(33), nozm(33,16)
 
-      real, save :: zin(16)          ! altitude grid
-      real, save :: mlatin(33)       ! magnetic latitude grid
-      real, save :: no_mean(33,16)   ! mean nitric oxide distribution
-      real, save :: eofs(33,16,3)    ! empirical orthogonal functions
       real :: theta0                 ! day number in degrees
       real :: dec                    ! solar declination angle
       real :: m1, m2, m3             ! coefficients for first 3 eofs
       real, parameter :: pi=3.1415926536
-      integer, save :: ifirst=1
-      integer :: j, k, n
-      character(len=1024) :: filepath 
-
-!... read eof file on first call
-
-      if (ifirst == 1) then
-        ifirst = 0
-        filepath = trim(data_dir)//'snoem_eof.dat'
-        open(unit=1,file=filepath,status='old',action='read')
-        read(1,*) (zin(k),k=1,16)
-        read(1,*) (mlatin(j),j=1,33)
-        read(1,*) ((no_mean(j,k),j=1,33),k=1,16)
-        read(1,*) (((eofs(j,k,n),j=1,33),k=1,16),n=1,3)
-        close(unit=1)
-      endif
+      integer :: j, k
 
 !... calculate coefficients (m1 to m3) for eofs based on geophysical parameters
 
@@ -72,12 +53,12 @@
 
       do k=1,16
         do j=1,33
-          nozm(j,k) = no_mean(j,k)-m1*eofs(j,k,1)+m2*eofs(j,k,2)-m3*eofs(j,k,3) 
+          nozm(j,k) = snoem_no_mean(j,k)-m1*snoem_eofs(j,k,1)+m2*snoem_eofs(j,k,2)-m3*snoem_eofs(j,k,3) 
         end do
       end do
 
-      z(:) = zin(:)
-      mlat(:) = mlatin(:)
+      z(:) = snoem_zin(:)
+      mlat(:) = snoem_mlatin(:)
 
       return
 

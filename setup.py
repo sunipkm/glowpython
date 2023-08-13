@@ -35,6 +35,7 @@ glow = Extension(
         "mzgrid.f90",
         "qback.f90",
         "rcolum.f90",
+        "snoem_init.f90",
         "snoem.f90",
         "snoemint.f90",
         "solzen.f90",

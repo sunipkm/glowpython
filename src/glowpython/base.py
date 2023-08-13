@@ -199,6 +199,8 @@ def generic(time: datetime, glat: Numeric, glon: Numeric, Nbins: int, Q: Numeric
     ip['f107p'] = (f107p)
     ip['ap'] = (ap)
 
+    _glon = glon
+    glon = glon % 360
 
     set_standard_switches(iscale, xuvfac, kchem, jlocal, itail, fmono, emono)
     init_cglow(jmax, Nbins)
@@ -356,7 +358,7 @@ def generic(time: datetime, glat: Numeric, glon: Numeric, Nbins: int, Q: Numeric
     else:
         ds.attrs['precip'] ={'Q': 0, 'Echar': 0}
     ds.attrs["time"] = time.isoformat()
-    ds.attrs["glatlon"] = (glat, glon)
+    ds.attrs["glatlon"] = (glat, _glon)
 
     if metadata is not None:
         ds.attrs["metadata"] = metadata

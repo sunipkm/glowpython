@@ -101,6 +101,11 @@ module cglow
 
   real(wp), allocatable, dimension(:,:) :: production, loss  ! gchem.f90
 
+  real :: snoem_zin(16)          ! altitude grid
+  real :: snoem_mlatin(33)       ! magnetic latitude grid
+  real :: snoem_no_mean(33,16)   ! mean nitric oxide distribution
+  real :: snoem_eofs(33,16,3)    ! empirical orthogonal functions
+
   contains
 
 !-----------------------------------------------------------------------
@@ -280,9 +285,10 @@ module cglow
        gams(:,:)    =0.
        gamb(:,:)    =0.
 
-       call ssflux_init(iscale) ! initialize ssflux
-       call ephoto_init()       ! initialize ephoto
-       call egrid(ener, edel, nbins) ! initialize energy grid
+       call egrid(ener, edel, nbins)  ! initialize energy grid
+       call snoem_init()              ! initialize snoem
+       call ssflux_init(iscale)       ! initialize ssflux
+       call ephoto_init()             ! initialize ephoto
        call EXSECT(ener, edel, nbins) ! call exsect
 
   end subroutine cglow_init
