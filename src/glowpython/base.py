@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Iterable, SupportsFloat as Numeric
+from typing import Iterable, Sequence, SupportsFloat as Numeric
 import atexit
 import warnings
 
@@ -8,7 +8,7 @@ from .fortran import cglow, cglow as cg, mzgrid, maxt, glow, conduct
 
 import xarray
 from xarray import Dataset, Variable
-from numpy import zeros, copy
+from numpy import array, asarray, float32, ones, zeros, copy
 from datetime import datetime, timedelta
 import geomagdata as gi
 import pytz
@@ -131,7 +131,7 @@ def runglow() -> None:
     cglow.zz = cglow.z * 1e5
     fortran.glow()
 
-def generic(time: datetime, glat: Numeric, glon: Numeric, Nbins: int, Q: Numeric = None, Echar: Numeric = None, *, geomag_params: dict | Iterable = None, tzaware: bool = False, jmax: int = 250, metadata = None, iscale: int=1, xuvfac: Numeric = 3, kchem: int = 4, jlocal: bool = False, itail: bool = False, fmono: float = 0, emono: float = 0) -> xarray.Dataset:
+def generic(time: datetime, glat: Numeric, glon: Numeric, Nbins: int, Q: Numeric = None, Echar: Numeric = None, density_perturbation: Sequence = None, *, geomag_params: dict | Iterable = None, tzaware: bool = False, jmax: int = 250, metadata = None, iscale: int=1, xuvfac: Numeric = 3, kchem: int = 4, jlocal: bool = False, itail: bool = False, fmono: float = 0, emono: float = 0) -> xarray.Dataset:
     """GLOW model with optional electron precipitation assuming Maxwellian distribution.
     Defaults to no precipitation.
 
@@ -139,9 +139,10 @@ def generic(time: datetime, glat: Numeric, glon: Numeric, Nbins: int, Q: Numeric
         time (datetime): Model evaluation time.
         glat (Numeric): Location latitude.
         glon (Numeric): Location longitude.
+        Nbins (int): Number of energy bins (must be >= 10).
         Q (Numeric, optional): Flux of precipitating electrons. Setting to None or < 0.001 makes it equivalent to no-precipitation. Defaults to None.
         Echar (Numeric, optional): Energy of precipitating electrons. Setting to None or < 1 makes it equivalent to no-precipitation. Defaults to None.
-        Nbins (int): Number of energy bins (must be >= 10).
+        density_perturbation (Sequence, optional): Density perturbations of O, O2, N2, NO, N(4S), N(2D) and e-. Supply as a sequence of length 7. Values must be positive. Defaults to None (all ones, i.e. no modification).
         geomag_params (dict | Iterable, optional): Custom geomagnetic parameters 'f107a' (average f10.7 over 81 days), 'f107' (current day f10.7), 'f107p' (previous day f10.7) and 'Ap' (the global 3 hour ap index). Must be present in this order for list or tuple, and use these keys for the dictionary. Defaults to None.
         tzaware (bool, optional): If time is time zone aware. If true, `time` is recast to 'UTC' using `time.astimezone(pytz.utc)`.
         jmax (int, optional): Maximum number of altitude levels. Defaults to 250.
@@ -199,6 +200,15 @@ def generic(time: datetime, glat: Numeric, glon: Numeric, Nbins: int, Q: Numeric
     ip['f107p'] = (f107p)
     ip['ap'] = (ap)
 
+    if density_perturbation is None:
+        density_perturbation = ones(7, dtype=float32)
+    else:
+        density_perturbation = asarray(density_perturbation, dtype=float32)
+        if density_perturbation.ndim != 1 or len(density_perturbation) != 7:
+            raise ValueError('Density perturbation must be a sequence of length 7')
+        if any(density_perturbation <= 0):
+            raise ValueError('Density perturbation must be positive.')
+    
     _glon = glon
     glon = glon % 360
 
@@ -218,6 +228,15 @@ def generic(time: datetime, glat: Numeric, glon: Numeric, Nbins: int, Q: Numeric
     cg.zun, cg.zvn, cg.ze, cg.zti, cg.zte, cg.zxden) = \
         mzgrid(cg.jmax, cg.nex, cg.idate, cg.ut, cg.glat, cg.glong,
             stl, cg.f107a, cg.f107, cg.f107p, cg.ap, IRI90_DIR)
+    
+    # Apply the density perturbations
+    cg.zo *= density_perturbation[0]
+    cg.zo2 *= density_perturbation[1]
+    cg.zn2 *= density_perturbation[2]
+    cg.zno *= density_perturbation[3]
+    cg.zns *= density_perturbation[4]
+    cg.znd *= density_perturbation[5]
+    cg.ze *= density_perturbation[6]
     
     # !
     # ! Fill altitude array, converting to cm:
@@ -368,16 +387,17 @@ def generic(time: datetime, glat: Numeric, glon: Numeric, Nbins: int, Q: Numeric
 
     return ds
 
-def maxwellian(time: datetime, glat: Numeric, glon: Numeric, Nbins: int, Q: Numeric, Echar: Numeric, *, geomag_params: dict | Iterable = None, tzaware: bool = False) -> xarray.Dataset:
+def maxwellian(time: datetime, glat: Numeric, glon: Numeric, Nbins: int, Q: Numeric, Echar: Numeric, density_perturbation: Sequence = None, *, geomag_params: dict | Iterable = None, tzaware: bool = False) -> xarray.Dataset:
     """GLOW model with electron precipitation assuming Maxwellian distribution.
 
     Args:
         time (datetime): Model evaluation time.
         glat (Numeric): Location latitude.
         glon (Numeric): Location longitude.
+        Nbins (int): Number of energy bins (must be >= 10).
         Q (Numeric): Flux of precipitating electrons.
         Echar (Numeric): Energy of precipitating electrons.
-        Nbins (int): Number of energy bins (must be >= 10).
+        density_perturbation (Sequence, optional): Density perturbations of O, O2, N2, NO, N(4S), N(2D) and e-. Supply as a sequence of length 7. Values must be positive. Defaults to None (all ones, i.e. no modification).
         geomag_params (dict | Iterable, optional): Custom geomagnetic parameters 'f107a' (average f10.7 over 81 days), 'f107' (current day f10.7), 'f107p' (previous day f10.7) and 'Ap' (the global 3 hour ap index). Must be present in this order for list or tuple, and use these keys for the dictionary. Defaults to None.
         tzaware (bool, optional): If time is time zone aware. If true, `time` is recast to 'UTC' using `time.astimezone(pytz.utc)`.
 
@@ -389,9 +409,9 @@ def maxwellian(time: datetime, glat: Numeric, glon: Numeric, Nbins: int, Q: Nume
     Returns:
         xarray.Dataset: GLOW model output dataset.
     """
-    return generic(time, glat, glon, Nbins, Q, Echar, geomag_params=geomag_params, tzaware=tzaware)
+    return generic(time, glat, glon, Nbins, Q, Echar, density_perturbation, geomag_params=geomag_params, tzaware=tzaware)
 
-def no_precipitation(time: datetime, glat: Numeric, glon: Numeric, Nbins: int, *, geomag_params: dict | Iterable = None, tzaware: bool = False) -> xarray.Dataset:
+def no_precipitation(time: datetime, glat: Numeric, glon: Numeric, Nbins: int, density_perturbation: Sequence = None, *, geomag_params: dict | Iterable = None, tzaware: bool = False) -> xarray.Dataset:
     """GLOW model without electron precipitation.
 
     Args:
@@ -399,6 +419,7 @@ def no_precipitation(time: datetime, glat: Numeric, glon: Numeric, Nbins: int, *
         glat (Numeric): Location latitude.
         glon (Numeric): Location longitude.
         Nbins (int): Number of energy bins (must be >= 10).
+        density_perturbation (Sequence, optional): Density perturbations of O, O2, N2, NO, N(4S), N(2D) and e-. Supply as a sequence of length 7. Values must be positive. Defaults to None (all ones, i.e. no modification).
         geomag_params (dict | Iterable, optional): Custom geomagnetic parameters 'f107a' (average f10.7 over 81 days), 'f107' (current day f10.7), 'f107p' (previous day f10.7) and 'Ap' (the global 3 hour ap index). Must be present in this order for list or tuple, and use these keys for the dictionary. Defaults to None.
         tzaware (bool, optional): If time is time zone aware. If true, `time` is recast to 'UTC' using `time.astimezone(pytz.utc)`.
 
@@ -410,7 +431,7 @@ def no_precipitation(time: datetime, glat: Numeric, glon: Numeric, Nbins: int, *
     Returns:
         xarray.Dataset: GLOW model output dataset.
     """
-    return generic(time, glat, glon, Nbins, Q=None, Echar=None, geomag_params=geomag_params, tzaware=tzaware)
+    return generic(time, glat, glon, Nbins, Q=None, Echar=None, density_perturbation=density_perturbation, geomag_params=geomag_params, tzaware=tzaware)
 
 
 def glowdate(t: datetime) -> tuple[str, str]:
