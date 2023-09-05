@@ -251,7 +251,9 @@ C IUCCIR=UNIT NUMBER FOR CCIR COEFFICIENTS ........................
 C
       MONITO=6
       IUCCIR=10
-      KONSOL=stderr
+      ! KONSOL=stderr
+      KONSOL=25
+      OPEN(KONSOL,FILE="/dev/null",status="old",ERR=8448)
 
 c
 c selection of density and ion composition options ..................
@@ -290,7 +292,7 @@ C
            ENDIF
 
       if(icalls.gt.1) goto 8201
-	! write(konsol,*) '*** IRI parameters are being calculated ***'
+	write(konsol,*) '*** IRI parameters are being calculated ***'
       if(NODEN) goto 2889
 	if(LAYVER) write(konsol,*) 'Ne, E-F: The LAY-Version is ',
      &	  'prelimenary. Erroneous profile features can occur.'
@@ -300,13 +302,13 @@ C
      &	  ' of equatorial topside is not included.'
 	if(HMF2IN) write(konsol,*) 'Ne, hmF2: Input values are used.'
 	if(FOF2IN) then
-	!   write(konsol,*) 'Ne, foF2: Input values are used.'
+	  write(konsol,*) 'Ne, foF2: Input values are used.'
 	  goto 2889
 	  endif
 	if(URSIF2) then
-	!   write(konsol,*) 'Ne, foF2: URSI model is used.'
+	  write(konsol,*) 'Ne, foF2: URSI model is used.'
 	else
-	!   write(konsol,*) 'Ne, foF2: CCIR model is used.'
+	  write(konsol,*) 'Ne, foF2: CCIR model is used.'
 	endif
 2889  if((.not.NOION).and.(DY))
      &	   write(konsol,*) 'Ion Com.: Using Danilov-Yaichnikov-1985.'
@@ -1024,6 +1026,7 @@ C
       OARR(27)=MODIP
 
 3330  CONTINUE
+      CLOSE(KONSOL)
       RETURN
       END
 C
