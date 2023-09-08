@@ -1,0 +1,41 @@
+# SPDX-FileCopyrightText: 2023 Sunip K. Mukherjee
+#
+# SPDX-License-Identifier: Apache-2.0
+
+[build-system]
+requires = [
+    "meson-python",
+]
+build-backend = "mesonpy"
+
+[project]
+name = "glowpython"
+version = "3.5.0"
+authors = [
+    {name = "Sunip K. Mukherjee", email = "sunipkmukherjee@gmail.com"}
+]
+description = "Python bindings for NCAR GLOW model"
+keywords = [
+  "thermosphere",
+  "ionosphere"
+]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Environment :: Console",
+  "Intended Audience :: Science/Research",
+  "Operating System :: OS Independent",
+  "Programming Language :: Fortran",
+  "Programming Language :: Python :: 3",
+  "Topic :: Scientific/Engineering :: Atmospheric Science",
+]
+license = "LICENSE.txt"
+readme = "README.md"
+# dependencies = ['numpy >= 1.10', 'xarray', 'geomagdata']
+
+[project.urls]
+Homepage = "https://github.com/sunipkm/glowpython"
+
+
+# [project.scripts]
+# GlowMaxwellian = "glowpython.examples:Maxwellian"
+# GlowNoPrecip = "glowpython.examples:NoPrecipitation"

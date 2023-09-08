@@ -4,7 +4,7 @@ import atexit
 import warnings
 
 from . import fortran
-from .fortran import cglow, cglow as cg, mzgrid, maxt, glow, conduct
+from .fortran import cglow, cglow as cg, mzgrid, maxt, glow, conduct # type: ignore
 
 import xarray
 from xarray import Dataset, Variable

@@ -1,1 +1,3 @@
-__version__ = '3.4.0'
+from importlib.metadata import version
+
+__version__ = version("glowpython")

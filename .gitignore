@@ -5,6 +5,7 @@
 __pycache__/
 bin/
 build/
+builldir/
 dist/
 **/.DS_Store
 # should not require vscode persistent settings
@@ -27,3 +28,6 @@ dist/
 **/*.exe
 **/*.out
 **/*.app
+
+# Others
+*.txt
