@@ -5,10 +5,17 @@ Optionally available from Python &ge; 3.7.
 
 A Fortran compiler is REQUIRED.
 
-Note: This version uses `meson` and `ninja` as the build system, and does not rely on `distutils`,
+<b>Note:</b> This version uses `meson` and `ninja` as the build system, and does not rely on `distutils`,
 and is Python 3.12 compatible.
 
 ## Installation
+
+<b>Note:</b> For macOS Big Sur and above, add the following line to your environment script (`~/.zshrc` if using ZSH, or the relevant shell init script):
+```sh
+export LIBRARY_PATH="$LIBRARY_PATH:/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/lib"
+```
+Then reopen the terminal. This fixes the issue where `-lSystem` fails for `gfortran`. Additionally,
+installation of `gfortran` using `homebrew` is required.
 
 Direct installation using pip:
 ```sh
