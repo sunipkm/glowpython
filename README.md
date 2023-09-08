@@ -5,6 +5,9 @@ Optionally available from Python &ge; 3.7.
 
 A Fortran compiler is REQUIRED.
 
+Note: This version uses `meson` and `ninja` as the build system, and does not rely on `distutils`,
+and is Python 3.12 compatible.
+
 ## Installation
 
 Direct installation using pip:
@@ -23,8 +26,10 @@ Requires (and installs) [geomagdata](https://pypi.org/project/geomagdata/) for t
 
 Then use examples such as:
 
-* Maxwellian.py: Maxwellian precipitation, specify Q (flux) and E0 (characteristic energy).
-* NoPrecipitation.py: No precipitating electrons.
+* `Examples/Maxwellian.py`: Maxwellian precipitation, specify Q (flux) and E0 (characteristic energy).
+* `Examples/NoPrecipitation.py`: No precipitating electrons.
+
+These examples are also available on the command line: `GlowMaxwellian` and `GlowNoPrecip`.
 
 Or, use GLOW in your own Python program by:
 ```python
