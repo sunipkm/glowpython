@@ -177,10 +177,10 @@ def generic(time: datetime, glat: Numeric, glon: Numeric, Nbins: int, Q: Numeric
 
     if geomag_params is None:
         ip = gi.get_indices([time - timedelta(days=1), time], 81, tzaware=tzaware)
-        f107a = float(ip["f107s"][1])
-        f107 = float(ip['f107'][1])
-        f107p = float(ip['f107'][0])
-        ap = float(ip["Ap"][1])
+        f107a = float(ip["f107s"].iloc[1])
+        f107 = float(ip['f107'].iloc[1])
+        f107p = float(ip['f107'].iloc[0])
+        ap = float(ip["Ap"].iloc[1])
     elif isinstance(geomag_params, dict):
         f107a = float(geomag_params['f107a'])
         f107 = float(geomag_params['f107'])

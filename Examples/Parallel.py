@@ -6,6 +6,7 @@ from tqdm.contrib.concurrent import process_map, thread_map
 from multiprocessing import Pool
 from glowpython import no_precipitation, generic
 from functools import partial
+import sys
 
 from datetime import datetime, timedelta
 from matplotlib import pyplot as plt
@@ -25,7 +26,11 @@ def wrap_generic(params):
     return generic(params[0], params[1], params[2], params[3], **params[4])
 
 # res = list(map(generic, times, lats, lons, [100] * num_runs))
+start = perf_counter_ns()
 res = list(map(wrap_generic, params))
+end = perf_counter_ns()
+print(f'Iterations: {num_runs}, Time taken: {(end - start)*1e-9:.6f} s')
+sys.exit(0)
 # res = thread_map(wrap_generic, params)
 # %%
 mnum = []
