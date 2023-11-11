@@ -291,9 +291,12 @@ def generic(time: datetime, glat: Numeric, glon: Numeric, Nbins: int, Q: Numeric
     ds['NeOut']    = Variable('alt_km', copy(cg.ecalc),       density_attrs)
     ds['ionrate']  = Variable('alt_km', copy(cg.tir),         density_attrs)
     ds['O+']       = Variable('alt_km', copy(cg.zxden[2,:]),  density_attrs)
+    ds['N2+']      = Variable('alt_km', copy(cg.zxden[4,:]),  density_attrs)
     ds['O2+']      = Variable('alt_km', copy(cg.zxden[5,:]),  density_attrs)
     ds['NO+']      = Variable('alt_km', copy(cg.zxden[6,:]),  density_attrs)
     ds['N2D']      = Variable('alt_km', copy(cg.zxden[9,:]),  density_attrs)
+    ds['O1S']      = Variable('alt_km', copy(cg.zxden[10,:]), density_attrs)
+    ds['O1D']      = Variable('alt_km', copy(cg.zxden[11,:]), density_attrs)
     ds['pederson'] = Variable('alt_km', pedcond,      {'units': 'S m^{-1}'})
     ds['hall']     = Variable('alt_km', hallcond,     {'units': 'S m^{-1}'})
 
