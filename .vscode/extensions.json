@@ -1,0 +1,15 @@
+{
+	"recommendations": [
+        "ms-python.python",
+        "autopep8.autopep8",
+		"sunipkm.autodocstringpy",
+        "ms-python.vscode-pylance",
+        "ms-python.debugpy",
+        "ms-toolsai.jupyter",
+        "ms-toolsai.vscode-jupyter-cell-tags",
+        "ms-toolsai.jupyter-keymap",
+        "ms-toolsai.jupyter-renderers",
+        "ms-toolsai.vscode-jupyter-slideshow",
+        "valentjn.vscode-ltex",
+	]
+}

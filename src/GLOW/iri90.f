@@ -187,7 +187,7 @@ C
      &		/BLOCK6/HMD,NMD,HDX   /BLOCK7/D1,XKK,FP30,FP3U,FP1,FP2
      &  	/BLOCK8/HS,TNHS,XSM,MM,DTI,MXSM
      &  	/BLOTN/XSM1,TEXOS,TLBDH,SIGMA /BLOTE/AHH,ATE1,STTE,DTE
-     &		/BLO10/BETA,ETA,DELTA,ZETA	 /ARGEXP/ARGMAX
+     &		/BLO10/BETA,ETA,DELTA,ZETAA	 /ARGEXP/ARGMAX
       EXTERNAL 		XE1,XE2,XE3,XE4,XE5,XE6,TEDER
       DATA  HOA  /300.,400.,600./,   XNAR       /3*0.0/,
      &      XDELS   /3*5.,10./,      DNDS   /.016,.01,2*.016/,
@@ -494,14 +494,14 @@ c
       endif
       ETA=0.058798+ETA1+FLU*(-0.014065+0.0069724*COS2)+
      &(0.0024287+0.0042810*COS2-0.00015280*FOF2)*FOF2
-      ZETA=0.078922-0.0046702*COS2+FLU*(-0.019132+0.0076545*COS2)+
+      ZETAA=0.078922-0.0046702*COS2+FLU*(-0.019132+0.0076545*COS2)+
      &(0.0032513+0.0060290*COS2-0.00020872*FOF2)*FOF2
       BETA=-128.03+20.253*COS2+FLU*(-8.0755-0.65896*COS2)+(0.44041
      &+0.71458*COS2-0.042966*FOF2)*FOF2
       Z=EXP(94.45/BETA)
       Z1=Z+1
       Z2=Z/(BETA*Z1*Z1)
-      DELTA=(ETA/Z1-ZETA/2.0)/(ETA*Z2+ZETA/400.0)
+      DELTA=(ETA/Z1-ZETAA/2.0)/(ETA*Z2+ZETAA/400.0)
 c
 c bottomside profile parameters .............................
 C
@@ -1114,13 +1114,13 @@ C
 c----------------------------------------------------------------
 C REPRESENTING ELECTRON DENSITY(M-3) IN THE TOPSIDE IONOSPHERE
 C (H=HMF2....1000 KM) BY HARMONIZED BENT-MODEL ADMITTING
-C VARIABILITY OFGLOBAL PARAMETER ETA,ZETA,BETA,DELTA WITH
+C VARIABILITY OFGLOBAL PARAMETER ETA,ZETAA,BETA,DELTA WITH
 C GEOM. LATITUDE, SMOOTHED SOLAR FLUX AND CRITICAL FREQUENCY
 C (SEE MAIN PROGRAM).
 C [REF.:K.RAWER,S.RAMAKRISHNAN,1978]
 c----------------------------------------------------------------
       COMMON	/BLOCK1/	HMF2,XNMF2,HMF1
-     &		/BLO10/		BETA,ETA,DELTA,ZETA
+     &		/BLO10/		BETA,ETA,DELTA,ZETAA
      &		/ARGEXP/	ARGMAX
 
       DXDH = (1000.-HMF2)/700.
@@ -1130,7 +1130,7 @@ c----------------------------------------------------------------
 	eptr1 = eptr(x,beta,394.5) - eptr(x0,beta,394.5)
 	eptr2 = eptr(x,100.,300.0) - eptr(x0,100.,300.0)
 
-      y = BETA * ETA * eptr1 + ZETA * (100. * eptr2 - xmx0)
+      y = BETA * ETA * eptr1 + ZETAA * (100. * eptr2 - xmx0)
 
  	Y = y * dxdh
 	if(abs(Y).gt.argmax) Y = sign(argmax,Y)
@@ -1142,13 +1142,13 @@ C
       FUNCTION DXE1N(H)
 C LOGARITHMIC DERIVATIVE OF FUNCTION XE1 (KM-1).
       COMMON	/BLOCK1/	HMF2,XNMF2,HMF1
-     &		/BLO10/		BETA,ETA,DELTA,ZETA
+     &		/BLO10/		BETA,ETA,DELTA,ZETAA
 
 	x0 = 300. - delta
       X=(H-HMF2)/(1000.0-HMF2)*700.0 + x0
 	epst2 = epst(x,100.0,300.0)
 	epst1 = epst(x,beta ,394.5)
-      DXE1N = - ETA * epst1 + ZETA * (1. - epst2)
+      DXE1N = - ETA * epst1 + ZETAA * (1. - epst2)
       RETURN
       END
 C

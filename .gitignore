@@ -8,8 +8,6 @@ build/
 builldir/
 dist/
 **/.DS_Store
-# should not require vscode persistent settings
-**/.vscode
 # Compiled Dynamic libraries
 **/*.so
 **/*.dylib

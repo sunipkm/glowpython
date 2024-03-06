@@ -1,0 +1,3 @@
+{
+    "autoDocstringPy.customTemplatePath": ".vscode/docstring.mustache"
+}

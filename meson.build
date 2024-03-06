@@ -66,6 +66,7 @@ glowpython_source = custom_target('fortranmodule.c',
 py.install_sources(
     'src/glowpython/__init__.py',
     'src/glowpython/base.py',
+    'src/glowpython/utils.py',
     'src/glowpython/version.py',
     'src/glowpython/plots.py',
     'src/glowpython/examples.py',

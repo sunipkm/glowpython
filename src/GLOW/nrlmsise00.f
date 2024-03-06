@@ -1316,7 +1316,7 @@ C       Calculate Temperature and Density Profiles for MSIS models
 C       New lower thermo polynomial 10/30/89
       DIMENSION ZN1(MN1),TN1(MN1),TGN1(2),XS(5),YS(5),Y2OUT(5)
       COMMON/PARMB/GSURF,RE
-      COMMON/LSQV/MP,II,JG,LT,QPB(50),IERR,IFUN,N,J,DV(60)
+      COMMON/LSQV/MP,II,JG,LT,QPB(50),IERRR,IFUN,N,J,DV(60)
       SAVE
       DATA RGAS/831.4/
       ZETA(ZZ,ZL)=(ZZ-ZL)*(RE+ZL)/(RE+ZZ)
@@ -1398,7 +1398,7 @@ C       Calculate Temperature and Density Profiles for lower atmos.
       DIMENSION ZN2(MN2),TN2(MN2),TGN2(2)
       COMMON/PARMB/GSURF,RE
       COMMON/FIT/TAF
-      COMMON/LSQV/MP,II,JG,LT,QPB(50),IERR,IFUN,N,J,DV(60)
+      COMMON/LSQV/MP,II,JG,LT,QPB(50),IERRR,IFUN,N,J,DV(60)
       SAVE
       DATA RGAS/831.4/
       ZETA(ZZ,ZL)=(ZZ-ZL)*(RE+ZL)/(RE+ZZ)
