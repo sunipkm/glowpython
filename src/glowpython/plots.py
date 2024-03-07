@@ -23,7 +23,7 @@ def density(iono: xarray.Dataset):
     ax.legend(loc="best")
 
     ax = axs[1]
-    for v in ("O+", "O2+", "NO+", "N2D"):
+    for v in ("O+", "O2+", "NO+", "N2D", 'NeIn'):
         ax.plot(iono[v], iono[v].alt_km, label=v)
     ax.set_xscale("log")
     ax.set_title("Ions")

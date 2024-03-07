@@ -57,10 +57,10 @@ fortran_srcs = [
   'src/tweaks/cglow_release.f90'
 ]
 
-glowpython_source = custom_target('fortranmodule.c',
+glowpython_source = custom_target('glowfortmodule.c',
   input : fortran_srcs,
-  output : ['fortranmodule.c', 'fortran-f2pywrappers.f', 'fortran-f2pywrappers2.f90'],
-  command : [py, '-m', 'numpy.f2py', '@INPUT@', '-m', 'fortran', '--lower']
+  output : ['glowfortmodule.c', 'glowfort-f2pywrappers.f', 'glowfort-f2pywrappers2.f90'],
+  command : [py, '-m', 'numpy.f2py', '@INPUT@', '-m', 'glowfort', '--lower']
 )
 
 py.install_sources(
@@ -82,7 +82,7 @@ install_subdir(
 
 inc_np = include_directories(incdir_numpy, incdir_f2py)
 
-py.extension_module('fortran',
+py.extension_module('glowfort',
   fortran_srcs + [glowpython_source],
   incdir_f2py / 'fortranobject.c',
   include_directories: inc_np,

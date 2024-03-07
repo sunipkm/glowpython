@@ -1,15 +1,14 @@
 from __future__ import annotations
-import matplotlib.pyplot as plt
 from os import path
 import pytz
 import geomagdata as gi
 from datetime import datetime, timedelta
-from numpy import arctan, array, asarray, float32, isnan, ones, pi as M_PI, tan, trapz, zeros, copy
+from numpy import asarray, float32, isnan, ones, trapz, zeros, copy
 from xarray import Dataset, Variable
 import xarray
-from .utils import glowdate, geocent_to_geodet
-from .fortran import cglow, cglow as cg, mzgrid, maxt, glow, conduct  # type: ignore
-from . import fortran
+from .utils import glowdate, geocent_to_geodet, interpolate_nan
+from .glowfort import cglow, cglow as cg, mzgrid, maxt, glow, conduct  # type: ignore
+from . import glowfort
 from typing import Iterable, Sequence, SupportsFloat as Numeric, Tuple
 import atexit
 import warnings
@@ -47,7 +46,7 @@ def init_cglow(jmax: int, nbins: int, force_realloc: bool = False) -> None:
 @atexit.register
 def release_cglow():
     '## Deallocate all allocatable `cglow` arrays.'
-    fortran.cglow_release()
+    glowfort.cglow_release()
     cglow.jmax = 0
     cglow.nbins = 0
 
@@ -126,7 +125,7 @@ def set_standard_switches(iscale: int = 1, xuvfac: Numeric = 3, kchem: int = 4, 
 def runglow() -> None:
     'Make sure `cglow.zz` is set before running subroutine `glow`'
     cglow.zz = cglow.z * 1e5
-    fortran.glow()
+    glowfort.glow()
 
 
 def generic(time: datetime,
@@ -307,8 +306,10 @@ def generic(time: datetime,
     # Scale the electron density to match the TEC
     if tec is not None:
         tec *= 1e12  # convert to num / cm^-2
-        iritec = trapz(cg.ze, cg.zz)  # integrate the electron density
-        cg.ze *= tec / iritec  # scale the electron density to match the TEC
+        ne = interpolate_nan(cg.ze, inplace=False)  # Filter out NaNs
+        iritec = trapz(ne, cg.zz)  # integrate the electron density
+        cg.ze = cg.ze * tec / iritec  # scale the electron density to match the TEC
+        cg.zxden[:, :] = cg.zxden[:, :] * tec / iritec  # scale the ion densities to match the TEC
 
     # !
     # ! Call MAXT to put auroral electron flux specified by namelist input into phitop array:

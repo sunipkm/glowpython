@@ -1,6 +1,6 @@
 from __future__ import annotations
-from typing import Tuple, SupportsFloat as Numeric
-from numpy import arctan, tan, pi as M_PI
+from typing import SupportsAbs, Tuple, SupportsFloat as Numeric, Callable
+from numpy import arctan, interp, isnan, ndarray, tan, pi as M_PI
 from datetime import datetime
 
 WGS84_ELL = (6378137, 6356752.3142)  # WGS84 ellipsoid
@@ -27,6 +27,7 @@ def geocent_to_geodet(lat: Numeric, ell: Tuple[Numeric, Numeric] = WGS84_ELL) ->
     assert (a > 0 and b > 0 and a > b and -90 <= lat <= 90)
     return arctan(b*tan(lat*M_PI/180)/a)*180/M_PI
 
+
 def glowdate(t: datetime) -> Tuple[int, Numeric]:
     """## Convert datetime to GLOW date and UT seconds.
 
@@ -36,7 +37,53 @@ def glowdate(t: datetime) -> Tuple[int, Numeric]:
     ### Returns:
         - `Tuple[int, Numeric]`: GLOW date (YYYYDDD) and UT seconds.
     """
-    idate = int(f'{t.year}{t:%j}')
-    utsec = (t.hour * 3600 + t.minute * 60 + t.second)
+    idate = int(f'{t.year:04}{t:%j}')
+    utsec = (t.hour * 3600 + t.minute * 60 + t.second + t.microsecond / 1e6)
 
     return idate, utsec
+
+
+def nan_helper(y: ndarray) -> Tuple[ndarray, Callable[[ndarray], ndarray]]:
+    """## Helper function to return NaN indices and a function to return non-NaN indices.
+
+    ### Args:
+        - `y (ndarray)`: Input 1-D array with NaNs.
+
+    ### Returns:
+        - `Tuple[ndarray, Callable[[ndarray], ndarray]]`: Tuple of NaN indices and a function to return non-NaN indices.
+
+    ### Example:
+        >>> # linear interpolation of NaNs
+        >>> nans, x= nan_helper(y)
+        >>> y[nans]= np.interp(x(nans), x(~nans), y[~nans])
+    """
+
+    return isnan(y), lambda z: z.nonzero()[0]
+
+
+def interpolate_nan(y: ndarray, *, inplace: bool = True, left: SupportsAbs = None, right: SupportsAbs = None, period: Numeric = None) -> ndarray:
+    """## Interpolate NaNs in a 1-D array.
+
+    ### Args:
+        - `y (ndarray)`: 1-D Array.
+        - `inplace (bool, optional)`: Change input array in place. Defaults to True.
+        - `left (Numeric, optional)`: Left boundary value. Defaults to 0.
+        - `right (Numeric, optional)`: Right boundary value. Defaults to None.
+        - `period (Numeric, optional)`: Period of the array. Defaults to None.
+
+    ### Returns:
+        - `ndarray`: Interpolated array.
+    """
+    if not inplace:
+        y = y.copy()
+    nans, x = nan_helper(y)
+    y[nans] = interp(x(nans), x(~nans), y[~nans], left=left, right=right, period=period)
+    return y
+
+
+if __name__ == '__main__':
+    import numpy as np
+    y = np.array([0, 1, np.nan, np.nan, 4, 5, 6, np.nan, 8, 9])
+    assert np.allclose(interpolate_nan(y),  [0., 1., 2., 3., 4., 5., 6., 7., 8., 9.])
+    y = np.array([1, 1, 1, np.nan, np.nan, 2, 2, np.nan, 0])
+    assert np.allclose(np.round(interpolate_nan(y), 2), [1., 1., 1., 1.33, 1.67, 2., 2., 1., 0.])
