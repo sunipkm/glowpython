@@ -260,13 +260,13 @@ def generic(time: datetime,
             if not (tmin <= time.timestamp() <= tmax):
                 raise ValueError('TEC dataset does not contain the time %s' % time)
             gdlat = geocent_to_geodet(glat)
-            tec = float(tec.interp(coords={'timestamps': time, 'gdlat': gdlat, 'glon': glon}).tec)
+            tec = float(tec.interp(coords={'timestamps': time.timestamp(), 'gdlat': gdlat, 'glon': glon}).tec)
             if isnan(tec):
                 tec = 1
                 warnings.warn(RuntimeWarning(f'<{glat:.2f}, {glon:.2f}> TEC is NaN, using 1 TECU instead'))
-            if any(tec <= 0):
+            if tec <= 0:
                 raise ValueError('TEC must be positive.')
-            if any(tec > 200):
+            if tec > 200:
                 raise ValueError('TEC must be in TECU. 1 TECU = 10^16 electrons/m^2')
 
     _glon = glon
@@ -303,13 +303,16 @@ def generic(time: datetime,
     cg.znd *= density_perturbation[5]
     cg.ze *= density_perturbation[6]
 
+    tecscale = 1
+
     # Scale the electron density to match the TEC
     if tec is not None:
         tec *= 1e12  # convert to num / cm^-2
         ne = interpolate_nan(cg.ze, inplace=False)  # Filter out NaNs
         iritec = trapz(ne, cg.zz)  # integrate the electron density
-        cg.ze = cg.ze * tec / iritec  # scale the electron density to match the TEC
-        cg.zxden[:, :] = cg.zxden[:, :] * tec / iritec  # scale the ion densities to match the TEC
+        tecscale = tec / iritec  # scale factor
+        cg.ze = cg.ze * tecscale  # scale the electron density to match the TEC
+        cg.zxden[:, :] = cg.zxden[:, :] * tecscale  # scale the ion densities to match the TEC
 
     # !
     # ! Call MAXT to put auroral electron flux specified by namelist input into phitop array:
@@ -450,6 +453,7 @@ def generic(time: datetime,
         ds.attrs['precip'] = {'Q': 0, 'Echar': 0}
     ds.attrs["time"] = time.isoformat()
     ds.attrs["glatlon"] = (glat, _glon)
+    ds.attrs['tecscale'] = tecscale
 
     if metadata is not None:
         ds.attrs["metadata"] = metadata
