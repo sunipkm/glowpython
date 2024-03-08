@@ -177,7 +177,8 @@ def generic(time: datetime,
             and the following data variable:
                 - `tec` (`float64`): TEC in TECU.
 
-            The nearest spatio-temporal TEC value is used to scale the electron density.
+            The nearest spatio-temporal TEC value is used to scale the electron density. This 
+            dataset format is compatible with the GPS TEC maps from the Madrigal database.
 
         - `metadata (dict, optional)`: Metadata to be added to the output dataset. Defaults to None.
         - `jmax (int, optional)`: Maximum number of altitude levels. Defaults to 250.
@@ -505,7 +506,8 @@ def maxwellian(time: datetime,
             and the following data variable:
                 - `tec` (`float64`): TEC in TECU.
 
-            The nearest spatio-temporal TEC value is used to scale the electron density.
+            The nearest spatio-temporal TEC value is used to scale the electron density. This
+            dataset format is compatible with the GPS TEC maps from the Madrigal database.
         - `metadata (dict, optional)`: Metadata to be added to the output dataset. Defaults to None.
 
     ### Raises:
@@ -556,7 +558,8 @@ def no_precipitation(time: datetime,
             and the following data variable:
                 - `tec` (`float64`): TEC in TECU.
 
-            The nearest spatio-temporal TEC value is used to scale the electron density.
+            The nearest spatio-temporal TEC value is used to scale the electron density. This
+            dataset format is compatible with the GPS TEC maps from the Madrigal database.
         - `metadata (dict, optional)`: Metadata to be added to the output dataset. Defaults to None.
 
     ### Raises:
