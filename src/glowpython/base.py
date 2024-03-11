@@ -250,25 +250,20 @@ def generic(time: datetime,
             raise ValueError('Density perturbation must be positive.')
 
     if tec is not None:
-        if isinstance(tec, Numeric):
-            if tec <= 0:
-                raise ValueError('TEC must be positive.')
-            if tec > 200:
-                raise ValueError('TEC must be in TECU. 1 TECU = 10^16 electrons/m^2')
-        elif isinstance(tec, Dataset):
+        if isinstance(tec, Dataset):
             tmin = float(tec['timestamps'].min())
             tmax = float(tec['timestamps'].max())
             if not (tmin <= time.timestamp() <= tmax):
                 raise ValueError('TEC dataset does not contain the time %s' % time)
             gdlat = geocent_to_geodet(glat)
             tec = float(tec.interp(coords={'timestamps': time.timestamp(), 'gdlat': gdlat, 'glon': glon}).tec)
-            if isnan(tec):
-                tec = 1
-                warnings.warn(RuntimeWarning(f'<{glat:.2f}, {glon:.2f}> TEC is NaN, using 1 TECU instead'))
-            if tec <= 0:
-                raise ValueError('TEC must be positive.')
-            if tec > 200:
-                raise ValueError('TEC must be in TECU. 1 TECU = 10^16 electrons/m^2')
+        if isnan(tec):
+            tec = 1
+            warnings.warn(RuntimeWarning(f'<{glat:.2f}, {glon:.2f}> TEC is NaN, using 1 TECU instead'))
+        if tec <= 0:
+            raise ValueError('TEC must be positive.')
+        if tec > 200:
+            raise ValueError('TEC must be in TECU. 1 TECU = 10^16 electrons/m^2')
 
     _glon = glon
     glon = glon % 360
