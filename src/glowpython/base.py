@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from numpy import asarray, float32, isnan, ones, trapz, zeros, copy
 from xarray import Dataset, Variable
 import xarray
-from .utils import glowdate, geocent_to_geodet, interpolate_nan
+from .utils import alt_grid, glowdate, geocent_to_geodet, interpolate_nan
 from .glowfort import cglow, cglow as cg, mzgrid, maxt, glow, conduct  # type: ignore
 from . import glowfort
 from typing import Iterable, Sequence, SupportsFloat as Numeric, Tuple
@@ -40,6 +40,7 @@ def init_cglow(jmax: int, nbins: int, force_realloc: bool = False) -> None:
     cglow.jmax = jmax
     cglow.nbins = nbins
     cglow.data_dir.put(0, '{: <1024s}'.format(DATA_DIR))
+    cglow.z = alt_grid(jmax, 60., 0.5, 4.)
     cglow.cglow_init()
 
 
@@ -280,10 +281,13 @@ def generic(time: datetime,
     # !
     stl = (cg.ut/3600. + cg.glong/15.) % 24
 
-    (cg.z, cg.zo, cg.zo2, cg.zn2, cg.zns, cg.znd, cg.zno, cg.ztn,
+    # !
+    # ! Call MZGRID to calculate neutral atmosphere parameters:
+    # !
+    (cg.zo, cg.zo2, cg.zn2, cg.zns, cg.znd, cg.zno, cg.ztn,
      cg.zun, cg.zvn, cg.ze, cg.zti, cg.zte, cg.zxden) = \
-        mzgrid(cg.jmax, cg.nex, cg.idate, cg.ut, cg.glat, cg.glong,
-               stl, cg.f107a, cg.f107, cg.f107p, cg.ap, IRI90_DIR)
+        mzgrid(cg.nex, cg.idate, cg.ut, cg.glat, cg.glong,
+               stl, cg.f107a, cg.f107, cg.f107p, cg.ap, cg.z, IRI90_DIR)
 
     # !
     # ! Fill altitude array, converting to cm:

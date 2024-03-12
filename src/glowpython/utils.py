@@ -1,7 +1,7 @@
 # %%
 from __future__ import annotations
 from typing import Iterable, SupportsAbs, Tuple, SupportsFloat as Numeric, Callable
-from numpy import arctan, interp, isnan, ndarray, tan, pi as M_PI, asarray, all
+from numpy import arctan, cumsum, float32, interp, isnan, linspace, ndarray, tan, pi as M_PI, asarray, all, tanh, zeros
 from datetime import datetime
 
 #: WGS84 ellipsoid major and minor axes.
@@ -87,6 +87,27 @@ def interpolate_nan(y: ndarray, *, inplace: bool = True, left: SupportsAbs = Non
     y[nans] = interp(x(nans), x(~nans), y[~nans], left=left, right=right, period=period)
     return y
 
+def alt_grid(num: int = 250, minalt: Numeric = 60, dmin: Numeric = 0.5, dmax: Numeric = 4)->ndarray:
+    """## Generate a non-linear altitude grid.
+    The altitude grid uses the hyperbolic tangent function to create a non-linear grid.
+    The grid, due to the hyperbolic tangent, is denser at lower altitudes and sparser at higher altitudes.
+
+    ### Args:
+        - `num (int, optional)`: Number of points. Defaults to 250.
+        - `minalt (Numeric, optional)`: Minimum altitude (km). Defaults to 60.
+        - `dmin (Numeric, optional)`: Minimum grid spacing at minimum altitude (km). Defaults to 0.5.
+        - `dmax (Numeric, optional)`: Maximum grid spacing at maximum altitude (km). Defaults to 4.
+
+    ### Returns:
+        - `ndarray`: Altitude grid (km)
+    """
+    out = linspace(0, 3.14, num, dtype=float32, endpoint=False) # tanh gets to 99% of asymptote
+    tanh(out, out=out, order='F')
+    out *= dmax
+    out += dmin
+    cumsum(out, out=out)
+    out += minalt - dmin
+    return out
 
 # %% Test functions
 if __name__ == '__main__':

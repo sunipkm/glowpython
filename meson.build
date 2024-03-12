@@ -29,7 +29,6 @@ incdir_f2py = run_command(py,
 ).stdout().strip()
 
 fortran_srcs = [
-  'src/GLOW/alt_grid.f90', 
   'src/GLOW/cglow.f90', 
   'src/GLOW/glow.f90', 
   'src/GLOW/bands.f90', 

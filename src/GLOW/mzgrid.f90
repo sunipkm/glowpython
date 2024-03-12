@@ -23,10 +23,10 @@
 !         f107   F10.7 index of day
 !         f107p  F107. index of previous day
 !         ap     Ap index daily value
+!         z      Geographic altitude grid (km)
 !         iri90_dir  Directory containing IRI input files (set in namelist inputs)
 
 ! Outputs:
-!         z      Geographic altitude (km)
 !         zo     O number density, cm-3
 !         zo2    O2    "
 !         zn2    N2    "
@@ -40,17 +40,18 @@
 !         zte    Te, K
 !         zxden  Array of ionized/excited species density, cm-3, must be dimensioned (nex,jmax)
 
-subroutine mzgrid (jmax,nex,idate,ut,glat,glong,stl,f107a,f107,f107p,ap,iri90_dir, &
-                   z,zo,zo2,zn2,zns,znd,zno,ztn,zun,zvn,ze,zti,zte,zxden)
+subroutine mzgrid (jmax,nex,idate,ut,glat,glong,stl,f107a,f107,f107p,ap,z, &
+                   iri90_dir, &
+                   zo,zo2,zn2,zns,znd,zno,ztn,zun,zvn,ze,zti,zte,zxden)
 
   use, intrinsic :: iso_fortran_env, only : stderr=>error_unit
 
   implicit none
 
   integer,intent(in) :: jmax,nex,idate
-  real,intent(in) :: ut,glat,glong,stl,f107a,f107,f107p,ap
+  real,intent(in) :: ut,glat,glong,stl,f107a,f107,f107p,ap,z(jmax)
   character(*),intent(in) :: iri90_dir
-  real,intent(out) :: z(jmax),zo(jmax),zo2(jmax),zn2(jmax),zns(jmax),znd(jmax), &
+  real,intent(out) :: zo(jmax),zo2(jmax),zn2(jmax),zns(jmax),znd(jmax), &
        zno(jmax),ztn(jmax),zti(jmax),zte(jmax),zun(jmax),zvn(jmax),ze(jmax),zxden(nex,jmax)
 
   integer :: j,ijf,jmag,iday,mmdd
@@ -63,7 +64,7 @@ subroutine mzgrid (jmax,nex,idate,ut,glat,glong,stl,f107a,f107,f107p,ap,iri90_di
 
 ! Call MSIS-2K to get neutral densities and temperature:
 !
-        call alt_grid(jmax, 60., 0.5, 4., z)
+        ! call alt_grid(jmax, 60., 0.5, 4., z)
         call tselec(sw)
 
         do j=1,jmax ! levels
