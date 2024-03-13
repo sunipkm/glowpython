@@ -53,7 +53,7 @@ fortran_srcs = [
   'src/GLOW/ssflux.f90', 
   'src/GLOW/iri90.f', 
   'src/GLOW/nrlmsise00.f', 
-  'src/tweaks/cglow_release.f90'
+  'src/GLOW/cglow_release.f90'
 ]
 
 glowpython_source = custom_target('glowfortmodule.c',

@@ -1,7 +1,7 @@
 # %%
 from __future__ import annotations
 from typing import Iterable, SupportsAbs, Tuple, SupportsFloat as Numeric, Callable
-from numpy import arctan, cumsum, float32, interp, isnan, linspace, ndarray, tan, pi as M_PI, asarray, all, tanh, zeros
+from numpy import arctan, cumsum, float32, interp, isnan, linspace, ndarray, tan, pi as M_PI, asarray, all, tanh
 from datetime import datetime
 
 #: WGS84 ellipsoid major and minor axes.
@@ -87,7 +87,8 @@ def interpolate_nan(y: ndarray, *, inplace: bool = True, left: SupportsAbs = Non
     y[nans] = interp(x(nans), x(~nans), y[~nans], left=left, right=right, period=period)
     return y
 
-def alt_grid(num: int = 250, minalt: Numeric = 60, dmin: Numeric = 0.5, dmax: Numeric = 4)->ndarray:
+
+def alt_grid(num: int = 250, minalt: Numeric = 60, dmin: Numeric = 0.5, dmax: Numeric = 4) -> ndarray:
     """## Generate a non-linear altitude grid.
     The altitude grid uses the hyperbolic tangent function to create a non-linear grid.
     The grid, due to the hyperbolic tangent, is denser at lower altitudes and sparser at higher altitudes.
@@ -101,13 +102,63 @@ def alt_grid(num: int = 250, minalt: Numeric = 60, dmin: Numeric = 0.5, dmax: Nu
     ### Returns:
         - `ndarray`: Altitude grid (km)
     """
-    out = linspace(0, 3.14, num, dtype=float32, endpoint=False) # tanh gets to 99% of asymptote
+    out = linspace(0, 3.14, num, dtype=float32, endpoint=False)  # tanh gets to 99% of asymptote
     tanh(out, out=out, order='F')
     out *= dmax
     out += dmin
     cumsum(out, out=out)
     out += minalt - dmin
     return out
+
+class Singleton(object):
+    """
+    ## A non-thread-safe helper class to ease implementing singletons.
+    The class that should be a singleton should inherit from this class.
+    """
+    def __new__(cls):
+        try:
+            return cls.__instance
+        except AttributeError:
+            pass
+        cls.__instance = super(Singleton, cls).__new__(cls)
+        return cls.__instance
+
+
+class singleton:
+    """
+    ## A non-thread-safe helper class to ease implementing singletons.
+    This should be used as a decorator -- not a metaclass -- to the
+    class that should be a singleton.
+
+    The decorated class can define one `__init__` function that
+    takes only the `self` argument. Also, the decorated class cannot be
+    inherited from. Other than that, there are no restrictions that apply
+    to the decorated class.
+
+    """
+
+    def __init__(self, decorated):
+        self._decorated = decorated
+
+    def __call__(self, *args, **kwargs):
+        """
+        Returns the singleton instance. Upon its first call, it creates a
+        new instance of the decorated class and calls its `__init__` method.
+        On all subsequent calls, the already created instance is returned.
+
+        """
+        # https://stackoverflow.com/a/903238/5214809
+        # The try except method is faster on the happy path by about 2x than hasattr
+        # But it may capture AttributeError from the instantiation which is not
+        # the intended behavior. To avoid this, the instantiation is done outside
+        # the try except block.
+        try:
+            return self._instance
+        except AttributeError:
+            pass
+        self._instance = self._decorated(*args, **kwargs)
+        return self._instance
+
 
 # %% Test functions
 if __name__ == '__main__':
