@@ -243,6 +243,156 @@ class GlowModel(Singleton):
         if not self._initd:
             raise RuntimeError('GLOW model not initialized')
         return self._ds['alt_km'].copy(deep=True)
+    
+    def setup(self, time: datetime,
+              glat: Numeric,
+              glon: Numeric,
+              nbins: int = 100,
+              *,
+              geomag_params: dict | Iterable = None,
+              tzaware: bool = False,
+              alt_km: int | Iterable = 250) -> None:
+        """## Setup the GLOW model for evaluation.
+        Initializes the `cglow` module if not initialized, and sets the input parameters for the GLOW model. Additionally, calculates the auroral electron flux using the `glowfort.maxt` subroutine if needed.
+
+        ### Args:
+            - `time (datetime)`: Model evaluation time.
+            - `glat (Numeric)`: Location latitude (degrees).
+            - `glon (Numeric)`: Location longitude (degrees).
+            - `nbins (int, optional)`: Number of energy bins (must be >= 10). Defaults to 100.
+            - `geomag_params (dict | Iterable, optional)`: Custom geomagnetic parameters.
+                - `f107a` (running average F10.7 over 81 days), 
+                - `f107` (current day F10.7), 
+                - `f107p` (previous day F10.7), and
+                - `Ap` (the global 3 hour $a_p$ index). 
+                
+                Must be present in this order for list or tuple, and use these keys for the dictionary. Defaults to None.
+            - `tzaware (bool, optional)`: If time is time zone aware. If true, `time` is recast to 'UTC' using `time.astimezone(pytz.utc)`. Defaults to False.
+            - `alt_km (int | Iterable, optional)`: See :method:`Glow.initialize` for documentation. Defaults to 250.
+
+        ### Raises:
+            - `RuntimeError`: Invalid type for geomagnetic parameters.
+        """
+        self.initialize(alt_km, nbins)
+
+        if tzaware:
+            time = time.astimezone(pytz.utc)
+
+        self._time = time
+
+        idate, utsec = glowdate(time)
+
+        if geomag_params is None:
+            ip = gi.get_indices([time - timedelta(days=1), time], 81, tzaware=tzaware)
+            f107a = float(ip["f107s"].iloc[1])
+            f107 = float(ip['f107'].iloc[1])
+            f107p = float(ip['f107'].iloc[0])
+            ap = float(ip["Ap"].iloc[1])
+        elif isinstance(geomag_params, dict):
+            f107a = float(geomag_params['f107a'])
+            f107 = float(geomag_params['f107'])
+            f107p = float(geomag_params['f107p'])
+            ap = float(geomag_params['Ap'])
+        elif isinstance(geomag_params, Iterable):
+            f107a = float(geomag_params[0])
+            f107 = float(geomag_params[1])
+            f107p = float(geomag_params[2])
+            ap = float(geomag_params[3])
+        else:
+            raise RuntimeError('Invalid type %s for geomag params %s' % (str(type(geomag_params), str(geomag_params))))
+
+        ip = {}
+        ip['f107a'] = (f107a)
+        ip['f107'] = (f107)
+        ip['f107p'] = (f107p)
+        ip['ap'] = (ap)
+
+        self._ip = ip
+
+        _glon = glon  # unmodified for dataset
+        glon = glon % 360
+
+        (cg.idate, cg.ut, cg.glat, cg.glong, cg.f107a,
+         cg.f107, cg.f107p, cg.ap) = \
+            (idate, utsec, glat, glon, f107a, f107, f107p, ap)
+
+        self._stl = (cg.ut/3600. + cg.glong/15.) % 24
+
+        ds = Dataset(coords={'alt_km': ('alt_km', cg.z, {'standard_name': 'altitude',
+                                                         'long_name': 'altitude',
+                                                         'units': 'km'}),
+                             'energy': ('energy', cg.ener, {'long_name': 'precipitation energy',
+                                                            'units': 'eV'})},
+                     data_vars={'precip': ('energy', cg.phitop, {
+                         'long_name': 'auroral electron flux',
+                         'units': 'cm^{-2} s^{-1} eV^{-1}'}
+                     )}
+                     )
+
+        ds['sflux'] = Variable('wave', cg.sflux,
+                               {'long_name': 'solar flux',
+                                'units': 'cm^{-2} s^{-1}',
+                                'comment': 'scaled solar flux'})
+        wave_attrs = {'long_name': 'wavelength',
+                      'units': 'Å'}
+        ds.coords['wave1'] = ('wave', cg.wave1, wave_attrs)
+        ds.coords['wave1'].attrs['comment'] = 'longwave edge of solar flux wavelength range'
+        ds.coords['wave2'] = ('wave', cg.wave2, wave_attrs)
+        ds.coords['wave2'].attrs['comment'] = 'shortwave edge of solar flux wavelength range'
+
+        ds.attrs["geomag_params"] = ip
+        ds.attrs["time"] = time.isoformat()
+        ds.attrs["glatlon"] = (glat, _glon)
+        ds.attrs['iscale'] = cglow.iscale
+        ds.attrs['xuvfac'] = cglow.xuvfac
+
+        self._ds = ds
+
+        self._initd = True
+        self._ready = True
+        self._evaluated = False
+
+    def precipitation(self,
+                      Q: Numeric = None,
+                      Echar: Numeric = None, 
+                      *,
+                      itail: bool = False, 
+                      fmono: Numeric = 0, 
+                      emono: Numeric = 0):
+        """## Set the precipitation parameters.
+
+        ### Args:
+            - `itail (bool, optional)`: Disable/enable low-energy tail. Defaults to False.
+            - `fmono (float, optional)`: Monoenergetic energy flux, erg/cm^2. Defaults to 0.
+            - `emono (float, optional)`: Monoenergetic characteristic energy, keV. Defaults to 0.
+        """
+        if Q is None or Echar is None:  # no precipitation case
+            Q = 0.0001
+            Echar = 0.1
+        cglow.ef = Q
+        cglow.ec = Echar
+        cglow.itail = 1 if itail else 0
+        cglow.fmono = fmono
+        cglow.emono = emono
+
+        # ! Call MAXT to put auroral electron flux specified by namelist input into phitop array:
+        cg.phitop[:] = 0.
+        if cg.ef > 0.001 and cg.ec > 1:
+            cg.phitop = maxt(cg.ef, cg.ec, cg.ener, cg.edel, cg.itail,
+                             cg.fmono, cg.emono)
+            
+        ds = self._ds
+            
+        if Q is not None and Echar is not None:
+            ds.attrs['Q'] = Q
+            ds.attrs['Echar'] = Echar
+        else:
+            ds.attrs['Q'] = 0
+            ds.attrs['Echar'] = 0
+
+        ds.attrs['itail'] = cglow.itail
+        ds.attrs['fmono'] = cglow.fmono
+        ds.attrs['emono'] = cglow.emono
 
     def setup(self, time: datetime,
               glat: Numeric,
