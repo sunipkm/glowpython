@@ -285,10 +285,15 @@ module cglow
        gams(:,:)    =0.
        gamb(:,:)    =0.
 
-       call egrid(ener, edel, nbins)  ! initialize energy grid
+      ! Does not depend on anything
        call snoem_init()              ! initialize snoem
+
+      ! Depends on iscale
        call ssflux_init(iscale)       ! initialize ssflux
        call ephoto_init()             ! initialize ephoto
+
+      ! Depends on nbins
+       call egrid(ener, edel, nbins)  ! initialize energy grid
        call EXSECT(ener, edel, nbins) ! call exsect
 
   end subroutine cglow_init

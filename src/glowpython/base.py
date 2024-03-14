@@ -75,7 +75,7 @@ def reset_cglow(jmax: int = None, nbins: int = None) -> None:
     init_cglow(jmax, nbins)
 
 
-def set_standard_switches(iscale: int = 1, xuvfac: Numeric = 3, itail: bool = False, fmono: Numeric = 0, emono: Numeric = 0) -> None:
+def set_standard_switches(iscale: int = 1) -> None:
     """## Set standard switches for CGLOW model.
 
     ### Args:
@@ -84,11 +84,6 @@ def set_standard_switches(iscale: int = 1, xuvfac: Numeric = 3, itail: bool = Fa
             - Use 0 for Hinteregger, and 2 for user-supplied solar flux model. 
 
             In that case, `data/ssflux_user.dat` must be contain the user-supplied solar flux model.
-
-        - `xuvfac (Numeric, optional)`: XUV enhancement factor. Defaults to 3.
-        - `itail (bool, optional)`: Disable/enable low-energy tail. Defaults to False.
-        - `fmono (float, optional)`: Monoenergetic energy flux, erg/cm^2. Defaults to 0.
-        - `emono (float, optional)`: Monoenergetic characteristic energy, keV. Defaults to 0.
 
     ### Raises:
         `ValueError`: `iscale` must be between `0` and `2`.
@@ -101,10 +96,6 @@ def set_standard_switches(iscale: int = 1, xuvfac: Numeric = 3, itail: bool = Fa
         raise ValueError('iscale must be between 0 and 2')
 
     cglow.iscale = iscale
-    cglow.xuvfac = xuvfac
-    cglow.itail = 1 if itail else 0
-    cglow.fmono = fmono
-    cglow.emono = emono
 
     if reinit:
         reset_cglow()
@@ -120,6 +111,7 @@ class GlowModel(Singleton):
     >>> mod = GlowModel()
     >>> mod.reset() # reset the model, this step is mandatory
     >>> mod.setup(datetime(2020, 1, 1, 0, 0), 65, 0) # setup the model
+    >>> mod.precipitation() # set the precipitation parameters (optional)
     >>> mod.atmosphere() # evaluate the atmosphere
     >>> mod.radtrans() # run the radiative transfer model
     >>> ds = mod.result() # get the result
@@ -134,7 +126,7 @@ class GlowModel(Singleton):
         self.reset()
         pass
 
-    def initialize(self, alt_km: int | Iterable = 250, nbins: int = 100) -> None:
+    def initialize(self, alt_km: int | Iterable = 250, nbins: int = 100, iscale: int = 1, *, wave1: Sequence = None, wave2: Sequence = None, rflux: Sequence = None) -> None:
         """## Initialize GLOW model.
 
         ### Args:
@@ -190,142 +182,10 @@ class GlowModel(Singleton):
 
         self._initd = True
         self._ready = False
+        self._atm = False
         self._evaluated = False
 
-    def setup(self, time: datetime,
-              glat: Numeric,
-              glon: Numeric,
-              nbins: int = 100,
-              Q: Numeric = None,
-              Echar: Numeric = None,
-              *,
-              geomag_params: dict | Iterable = None,
-              tzaware: bool = False,
-              alt_km: int | Iterable = 250) -> None:
-        """## Setup the GLOW model for evaluation.
-        Initializes the `cglow` module if not initialized, and sets the input parameters for the GLOW model. Additionally, calculates the auroral electron flux using the `glowfort.maxt` subroutine if needed.
-
-        ### Args:
-            - `time (datetime)`: Model evaluation time.
-            - `glat (Numeric)`: Location latitude (degrees).
-            - `glon (Numeric)`: Location longitude (degrees).
-            - `nbins (int, optional)`: Number of energy bins (must be >= 10). Defaults to 100.
-            - `Q (Numeric, optional)`: Flux of precipitating electrons (erg/cm^2/s). Setting to None or < 0.001 makes it equivalent to no-precipitation. Defaults to None.
-            - `Echar (Numeric, optional)`: Energy of precipitating electrons. Setting to None or < 1 makes it equivalent to no-precipitation. Defaults to None.
-            - `geomag_params (dict | Iterable, optional)`: Custom geomagnetic parameters.
-            - `f107a` (running average F10.7 over 81 days), 
-            - `f107` (current day F10.7), 
-            - `f107p` (previous day F10.7), and
-            - `Ap` (the global 3 hour $a_p$ index). 
-
-            Must be present in this order for list or tuple, and use these keys for the dictionary. Defaults to None.
-            - `tzaware (bool, optional)`: If time is time zone aware. If true, `time` is recast to 'UTC' using `time.astimezone(pytz.utc)`. Defaults to False.
-            - `alt_km (int | Iterable, optional)`: See :method:`Glow.initialize` for documentation. Defaults to 250.
-
-        ### Raises:
-            - `RuntimeError`: Invalid type for geomagnetic parameters.
-        """
-        self.initialize(alt_km, nbins)
-
-        if tzaware:
-            time = time.astimezone(pytz.utc)
-
-        self._time = time
-
-        idate, utsec = glowdate(time)
-
-        if Q is None or Echar is None:  # no precipitation case
-            Q = 0.0001
-            Echar = 0.1
-
-        if geomag_params is None:
-            ip = gi.get_indices([time - timedelta(days=1), time], 81, tzaware=tzaware)
-            f107a = float(ip["f107s"].iloc[1])
-            f107 = float(ip['f107'].iloc[1])
-            f107p = float(ip['f107'].iloc[0])
-            ap = float(ip["Ap"].iloc[1])
-        elif isinstance(geomag_params, dict):
-            f107a = float(geomag_params['f107a'])
-            f107 = float(geomag_params['f107'])
-            f107p = float(geomag_params['f107p'])
-            ap = float(geomag_params['Ap'])
-        elif isinstance(geomag_params, Iterable):
-            f107a = float(geomag_params[0])
-            f107 = float(geomag_params[1])
-            f107p = float(geomag_params[2])
-            ap = float(geomag_params[3])
-        else:
-            raise RuntimeError('Invalid type %s for geomag params %s' % (str(type(geomag_params), str(geomag_params))))
-
-        ip = {}
-        ip['f107a'] = (f107a)
-        ip['f107'] = (f107)
-        ip['f107p'] = (f107p)
-        ip['ap'] = (ap)
-
-        _glon = glon  # unmodified for dataset
-        glon = glon % 360
-
-        (cg.idate, cg.ut, cg.glat, cg.glong, cg.f107a,
-         cg.f107, cg.f107p, cg.ap, cg.ef, cg.ec) = \
-            (idate, utsec, glat, glon, f107a, f107, f107p, ap, Q, Echar)
-
-        # ! Call MAXT to put auroral electron flux specified by namelist input into phitop array:
-        cg.phitop[:] = 0.
-        if cg.ef > 0.001 and cg.ec > 1:
-            cg.phitop = maxt(cg.ef, cg.ec, cg.ener, cg.edel, cg.itail,
-                             cg.fmono, cg.emono)
-
-        self._stl = (cg.ut/3600. + cg.glong/15.) % 24
-
-        ds = Dataset(coords={'alt_km': ('alt_km', cg.z, {'standard_name': 'altitude',
-                                                         'long_name': 'altitude',
-                                                         'units': 'km'}),
-                             'energy': ('energy', cg.ener, {'long_name': 'precipitation energy',
-                                                            'units': 'eV'})},
-                     data_vars={'precip': ('energy', cg.phitop, {
-                         'long_name': 'auroral electron flux',
-                         'units': 'cm^{-2} s^{-1} eV^{-1}'}
-                     )}
-                     )
-
-        ds.coords['sflux'] = Variable('wave', cg.sflux,
-                                      {'long_name': 'solar flux',
-                                       'units': 'cm^{-2} s^{-1}',
-                                       'comment': 'scaled solar flux'})
-        wave_attrs = {'long_name': 'wavelength',
-                      'units': 'Å'}
-        ds.coords['wave'] = ('wave', (cg.wave1 + cg.wave2)*0.5, wave_attrs)
-        ds.coords['wave'].attrs['description'] = 'Center of solar flux bins'
-        ds.coords['dwave'] = ('wave', cg.wave2 - cg.wave1, wave_attrs)
-        ds.coords['dwave'].attrs['description'] = 'Width of solar flux bins'
-
-        ds.attrs["time"] = time.isoformat()
-        ds.attrs["glatlon"] = (glat, _glon)
-
-        if Q is not None and Echar is not None:
-            ds.attrs['Q'] = Q
-            ds.attrs['Echar'] = Echar
-        else:
-            ds.attrs['Q'] = 0
-            ds.attrs['Echar'] = 0
-
-        for k, v in ip.items():
-            ds.attrs[k] = v
-
-        ds.attrs['iscale'] = cglow.iscale
-        ds.attrs['xuvfac'] = cglow.xuvfac
-        ds.attrs['itail'] = cglow.itail
-        ds.attrs['fmono'] = cglow.fmono
-        ds.attrs['emono'] = cglow.emono
-
-        self._ds = ds
-
-        self._initd = True
-        self._ready = True
-        self._evaluated = False
-
-    def reset(self, iscale: int = 1, xuvfac: Numeric = 3, itail: bool = False, fmono: Numeric = 0, emono: Numeric = 0) -> None:
+    def reset(self, iscale: int = 1) -> None:
         """## Reset switches for CGLOW model.
         Pass no arguments to use the standard settings.
         MUST call `initialize`/`set_altitude` after calling this method.
@@ -337,11 +197,6 @@ class GlowModel(Singleton):
 
                 In that case, `data/ssflux_user.dat` must be contain the user-supplied solar flux model.
 
-            - `xuvfac (Numeric, optional)`: XUV enhancement factor. Defaults to 3.
-            - `itail (bool, optional)`: Disable/enable low-energy tail. Defaults to False.
-            - `fmono (float, optional)`: Monoenergetic energy flux, erg/cm^2. Defaults to 0.
-            - `emono (float, optional)`: Monoenergetic characteristic energy, keV. Defaults to 0.
-
         ### Raises:
             `ValueError`: `iscale` must be between `0` and `2`.
             `ValueError`: `kchem` must be between `0` and `4`.
@@ -349,8 +204,9 @@ class GlowModel(Singleton):
         self._reset = True
         self._initd = False
         self._ready = False
+        self._atm = False
         self._evaluated = False
-        set_standard_switches(iscale, xuvfac, itail, fmono, emono)
+        set_standard_switches(iscale)
 
     def result(self, copy: bool = True) -> xarray.Dataset:
         """## Get the GLOW model output dataset.
@@ -387,6 +243,169 @@ class GlowModel(Singleton):
         if not self._initd:
             raise RuntimeError('GLOW model not initialized')
         return self._ds['alt_km'].copy(deep=True)
+
+    def setup(self, time: datetime,
+              glat: Numeric,
+              glon: Numeric,
+              nbins: int = 100,
+              *,
+              geomag_params: dict | Iterable = None,
+              tzaware: bool = False,
+              alt_km: int | Iterable = 250) -> None:
+        """## Setup the GLOW model for evaluation.
+        Initializes the `cglow` module if not initialized, and sets the input parameters for the GLOW model. Additionally, calculates the auroral electron flux using the `glowfort.maxt` subroutine if needed.
+
+        ### Args:
+            - `time (datetime)`: Model evaluation time.
+            - `glat (Numeric)`: Location latitude (degrees).
+            - `glon (Numeric)`: Location longitude (degrees).
+            - `nbins (int, optional)`: Number of energy bins (must be >= 10). Defaults to 100.
+            - `geomag_params (dict | Iterable, optional)`: Custom geomagnetic parameters.
+                - `f107a` (running average F10.7 over 81 days), 
+                - `f107` (current day F10.7), 
+                - `f107p` (previous day F10.7), and
+                - `Ap` (the global 3 hour $a_p$ index). 
+
+                Must be present in this order for list or tuple, and use these keys for the dictionary. Defaults to None.
+            - `tzaware (bool, optional)`: If time is time zone aware. If true, `time` is recast to 'UTC' using `time.astimezone(pytz.utc)`. Defaults to False.
+            - `alt_km (int | Iterable, optional)`: See :method:`Glow.initialize` for documentation. Defaults to 250.
+
+        ### Raises:
+            - `RuntimeError`: Invalid type for geomagnetic parameters.
+        """
+        self.initialize(alt_km, nbins)
+
+        if tzaware:
+            time = time.astimezone(pytz.utc)
+
+        self._time = time
+
+        idate, utsec = glowdate(time)
+
+        if geomag_params is None:
+            ip = gi.get_indices([time - timedelta(days=1), time], 81, tzaware=tzaware)
+            f107a = float(ip["f107s"].iloc[1])
+            f107 = float(ip['f107'].iloc[1])
+            f107p = float(ip['f107'].iloc[0])
+            ap = float(ip["Ap"].iloc[1])
+        elif isinstance(geomag_params, dict):
+            f107a = float(geomag_params['f107a'])
+            f107 = float(geomag_params['f107'])
+            f107p = float(geomag_params['f107p'])
+            ap = float(geomag_params['Ap'])
+        elif isinstance(geomag_params, Iterable):
+            f107a = float(geomag_params[0])
+            f107 = float(geomag_params[1])
+            f107p = float(geomag_params[2])
+            ap = float(geomag_params[3])
+        else:
+            raise RuntimeError('Invalid type %s for geomag params %s' % (str(type(geomag_params), str(geomag_params))))
+
+        ip = {}
+        ip['f107a'] = (f107a)
+        ip['f107'] = (f107)
+        ip['f107p'] = (f107p)
+        ip['ap'] = (ap)
+
+        _glon = glon  # unmodified for dataset
+        glon = glon % 360
+
+        (cg.idate, cg.ut, cg.glat, cg.glong, cg.f107a,
+         cg.f107, cg.f107p, cg.ap) = \
+            (idate, utsec, glat, glon, f107a, f107, f107p, ap)
+
+        self._stl = (cg.ut/3600. + cg.glong/15.) % 24
+
+        cg.phitop[:] = 0.
+
+        ds = Dataset(coords={'alt_km': ('alt_km', cg.z, {'standard_name': 'altitude',
+                                                         'long_name': 'altitude',
+                                                         'units': 'km'}),
+                             'energy': ('energy', cg.ener, {'long_name': 'precipitation energy',
+                                                            'units': 'eV'})},
+                     data_vars={'precip': ('energy', cg.phitop,
+                                           {
+                                               'long_name': 'auroral electron flux',
+                                               'units': 'cm^{-2} s^{-1} eV^{-1}'}
+                                           )
+                                }
+                     )
+
+        ds.coords['sflux'] = Variable('wave', cg.sflux,
+                                      {'long_name': 'solar flux',
+                                       'units': 'cm^{-2} s^{-1}',
+                                       'comment': 'scaled solar flux'})
+        wave_attrs = {'long_name': 'wavelength',
+                      'units': 'Å'}
+        ds.coords['wave'] = ('wave', (cg.wave1 + cg.wave2)*0.5, wave_attrs)
+        ds.coords['wave'].attrs['description'] = 'Center of solar flux bins'
+        ds.coords['dwave'] = ('wave', cg.wave2 - cg.wave1, wave_attrs)
+        ds.coords['dwave'].attrs['description'] = 'Width of solar flux bins'
+
+        ds.attrs["time"] = time.isoformat()
+        ds.attrs["glatlon"] = (glat, _glon)
+
+        for k, v in ip.items():
+            ds.attrs[k] = v
+
+        cglow.ef = 0
+        cglow.ec = 0
+        cglow.itail = 0
+        cglow.fmono = 0
+        cglow.emono = 0
+
+        ds.attrs['Q'] = cg.ef
+        ds.attrs['Echar'] = cg.ec
+        ds.attrs['itail'] = cglow.itail
+        ds.attrs['fmono'] = cglow.fmono
+        ds.attrs['emono'] = cglow.emono
+
+        ds.attrs['iscale'] = cglow.iscale
+
+        self._ds = ds
+
+        self._initd = True
+        self._ready = True
+        self._atm = False
+        self._evaluated = False
+        return
+
+    def precipitation(self, Q: Numeric = None, Echar: Numeric = None, *,
+                      itail: bool = False,
+                      fmono: Numeric = 0,
+                      emono: Numeric = 0):
+        """## Calculate electron precipitation.
+
+        ### Args:
+            - `Q (Numeric, optional)`: Flux of precipitating electrons (erg/cm^2/s). Setting to None or < 0.001 makes it equivalent to no-precipitation. Defaults to None.
+            - `Echar (Numeric, optional)`: Energy of precipitating electrons. Setting to None or < 1 makes it equivalent to no-precipitation. Defaults to None.
+            - `itail (bool, optional)`: Disable/enable low-energy tail. Defaults to False.
+            - `fmono (float, optional)`: Monoenergetic energy flux, erg/cm^2. Defaults to 0.
+            - `emono (float, optional)`: Monoenergetic characteristic energy, keV. Defaults to 0.
+        """
+        if Q is None or Echar is None:  # no precipitation case
+            Q = 0.0001
+            Echar = 0.1
+        cglow.ef = Q
+        cglow.ec = Echar
+        cglow.itail = 1 if itail else 0
+        cglow.fmono = fmono
+        cglow.emono = emono
+
+        # ! Call MAXT to put auroral electron flux specified by namelist input into phitop array:
+        cg.phitop = maxt(cg.ef, cg.ec, cg.ener, cg.edel, cg.itail,
+                         cg.fmono, cg.emono)
+
+        ds = self._ds
+
+        if Q is not None and Echar is not None:
+            ds.attrs['Q'] = Q
+            ds.attrs['Echar'] = Echar
+
+        ds.attrs['itail'] = cglow.itail
+        ds.attrs['fmono'] = cglow.fmono
+        ds.attrs['emono'] = cglow.emono
+        return
 
     def atmosphere(self, density_perturbation: Sequence = None, tec: Numeric | Dataset = None) -> None:
         """## Evaluate the atmosphere
@@ -536,7 +555,10 @@ class GlowModel(Singleton):
             'description': 'Density perturbation applied to the atmospheric densities. 1.0 means no perturbation.',
         })
 
-    def radtrans(self, jlocal: bool = False, kchem: int = 4, *,
+        self._atm = True
+        return
+
+    def radtrans(self, xuvfac: int = 3, jlocal: bool = False, kchem: int = 4, *,
                  ion_n: Iterable = None,
                  ion_n2: Iterable = None,
                  ion_o: Iterable = None,
@@ -560,6 +582,7 @@ class GlowModel(Singleton):
          - `glowfort.bands`: Calculate the LBH specific airglow emission rates.
 
         ### Args:
+            - `xuvfac (int, optional)`: XUV enhancement factor. Defaults to 3.
             - `jlocal (bool, optional)`: Set to False for electron transport calculations, set to True for local calculations only. Defaults to False.
             - `kchem (int, optional)`: `kchem (int, optional)`: CGLOW chemical calculations. Defaults to 4.
                 - `0`: no calculations at all are performed.
@@ -574,12 +597,17 @@ class GlowModel(Singleton):
             - `ion_no (Iterable, optional)`: NO+ density profile. If None, IRI-90 profile is used. Defaults to None.
 
         ### Raises:
+            - `RuntimeError`: GLOW model not ready for evaluation. Run `setup` first.
+            - `RuntimeError`: Atmosphere not evaluated. Run `atmosphere` (and `precipitation` if needed) first.
             - `ValueError`: `kchem` must be between `0` and `4`.
             - `ValueError`: `ion_n` and `ion_n2` must be specified for `kchem = 2`.
             - `ValueError`: `Invalid dimensions for ion density profiles`.
         """
         if not self._ready:
             raise RuntimeError('GLOW model not ready for evaluation. Run `setup` first.')
+        if not self._atm:
+            raise RuntimeError('Atmosphere not evaluated. Run `atmosphere` (and `precipitation` if needed) first.')
+        cglow.xuvfac = xuvfac
         # ! Set switch for ETRANS
         cglow.jlocal = 1 if jlocal else 0
 
@@ -763,12 +791,13 @@ class GlowModel(Singleton):
         ds['Tez'] = Variable('alt_km', cg.tez, {'units': 'eV cm^{-3} s^{-1}',
                                                 'comment': 'total energetic electron energy deposition', 'long_name': 'energy deposition'})
 
+        ds.attrs['xuvfac'] = xuvfac
         ds.attrs['kchem'] = kchem
         ds.attrs['jlocal'] = jlocal
 
         self._evaluated = True
 
-    def evaluate(self, jlocal: bool = False, kchem: int = 4, *,
+    def evaluate(self, xuvfac: int = 3, jlocal: bool = False, kchem: int = 4, *,
                  density_perturbation: Sequence = None,
                  tec: Numeric | Dataset = None,
                  ion_n: Iterable = None,
@@ -778,8 +807,10 @@ class GlowModel(Singleton):
                  ion_no: Iterable = None) -> xarray.Dataset:
         """## Evaluate the GLOW model.
         This function runs the atmosphere and radiative transfer models in sequence.
+        If electron precipitation is required, use the :method:`GlowModel.precipitation` method before calling this function.
 
         ### Args:
+            - `xuvfac (int, optional)`: XUV enhancement factor. Defaults to 3.
             - `jlocal (bool, optional)`: Set to False for electron transport calculations, set to True for local calculations only. Defaults to False.
             - `kchem (int, optional)`: CGLOW chemical calculations. Defaults to 4.
             - `density_perturbation (Sequence, optional)`: Density perturbations of O, O2, N2, NO, N(4S), N(2D) and e-. Defaults to None.
@@ -794,10 +825,10 @@ class GlowModel(Singleton):
             - `xarray.Dataset`: GLOW model output dataset.
         """
         self.atmosphere(density_perturbation, tec)
-        self.radtrans(jlocal, kchem, ion_n=ion_n, ion_n2=ion_n2, ion_o=ion_o, ion_o2=ion_o2, ion_no=ion_no)
+        self.radtrans(xuvfac, jlocal, kchem, ion_n=ion_n, ion_n2=ion_n2, ion_o=ion_o, ion_o2=ion_o2, ion_no=ion_no)
         return self.result()
 
-    def __call__(self, jlocal: bool = False, kchem: int = 4, *,
+    def __call__(self, xuvfac: int = 3, jlocal: bool = False, kchem: int = 4, *,
                  density_perturbation: Sequence = None,
                  tec: Numeric | Dataset = None,
                  ion_n: Iterable = None,
@@ -807,8 +838,10 @@ class GlowModel(Singleton):
                  ion_no: Iterable = None) -> xarray.Dataset:
         """## Evaluate the GLOW model.
         This function runs the atmosphere and radiative transfer models in sequence.
+        If electron precipitation is required, use the :method:`GlowModel.precipitation` method before calling this function.
 
         ### Args:
+            - `xuvfac (int, optional)`: XUV enhancement factor. Defaults to 3.
             - `jlocal (bool, optional)`: Set to False for electron transport calculations, set to True for local calculations only. Defaults to False.
             - `kchem (int, optional)`: CGLOW chemical calculations. Defaults to 4.
             - `density_perturbation (Sequence, optional)`: Density perturbations of O, O2, N2, NO, N(4S), N(2D) and e-. Defaults to None.
@@ -822,7 +855,7 @@ class GlowModel(Singleton):
         ### Returns:
             - `xarray.Dataset`: GLOW model output dataset.
         """
-        return self.evaluate(jlocal, kchem, density_perturbation=density_perturbation, tec=tec, ion_n=ion_n, ion_n2=ion_n2, ion_o=ion_o, ion_o2=ion_o2, ion_no=ion_no)
+        return self.evaluate(xuvfac, jlocal, kchem, density_perturbation=density_perturbation, tec=tec, ion_n=ion_n, ion_n2=ion_n2, ion_o=ion_o, ion_o2=ion_o2, ion_no=ion_no)
 
 
 def generic(time: datetime,
@@ -901,9 +934,10 @@ def generic(time: datetime,
         - `xarray.Dataset`: GLOW model output dataset.
     """
     mod = GlowModel()  # Get an instance of the GLOW model
-    mod.reset(iscale, xuvfac, itail, fmono, emono)
-    mod.setup(time, glat, glon, Nbins, Q, Echar, geomag_params=geomag_params, tzaware=tzaware, alt_km=jmax)
-    ds = mod(jlocal, kchem, density_perturbation=density_perturbation, tec=tec)
+    mod.reset(iscale)
+    mod.setup(time, glat, glon, Nbins, geomag_params=geomag_params, tzaware=tzaware, alt_km=jmax)
+    mod.precipitation(Q, Echar, itail=itail, fmono=fmono, emono=emono)
+    ds = mod(xuvfac, jlocal, kchem, density_perturbation=density_perturbation, tec=tec)
     _ = metadata
     return ds
 
@@ -921,7 +955,6 @@ def maxwellian(time: datetime,
                tec: Numeric | Dataset = None,
                metadata: dict = None) -> xarray.Dataset:
     """## GLOW model with electron precipitation assuming Maxwellian distribution.
-    Internally calls `generic` with `Q` and `Echar` set.
 
     ### Args:
         - `time (datetime)`: Model evaluation time.
@@ -959,9 +992,13 @@ def maxwellian(time: datetime,
     ### Returns:
         - `xarray.Dataset`: GLOW model output dataset.
     """
-    return generic(time, glat, glon, Nbins, Q, Echar,
-                   density_perturbation, geomag_params=geomag_params,
-                   tzaware=tzaware, tec=tec, metadata=metadata)
+    mod = GlowModel()  # Get an instance of the GLOW model
+    mod.reset()
+    mod.setup(time, glat, glon, Nbins, geomag_params=geomag_params, tzaware=tzaware)
+    mod.precipitation(Q, Echar)
+    ds = mod(density_perturbation=density_perturbation, tec=tec)
+    _ = metadata
+    return ds
 
 
 def no_precipitation(time: datetime,
@@ -975,7 +1012,6 @@ def no_precipitation(time: datetime,
                      tec: Numeric | Dataset = None,
                      metadata: dict = None) -> xarray.Dataset:
     """## GLOW model with no electron precipitation.
-    Internally calls `generic` with `Q` and `Echar` set to zero.
 
     ### Args:
         - `time (datetime)`: Model evaluation time.
@@ -1011,7 +1047,70 @@ def no_precipitation(time: datetime,
     ### Returns:
         - `xarray.Dataset`: GLOW model output dataset.
     """
-    return generic(time, glat, glon, Nbins, Q=None, Echar=None,
-                   density_perturbation=density_perturbation,
-                   geomag_params=geomag_params, tzaware=tzaware,
-                   tec=tec, metadata=metadata)
+    mod = GlowModel()  # Get an instance of the GLOW model
+    mod.reset()
+    mod.setup(time, glat, glon, Nbins, geomag_params=geomag_params, tzaware=tzaware)
+    ds = mod(density_perturbation=density_perturbation, tec=tec)
+    _ = metadata
+    return ds
+
+
+def monoenergetic(time: datetime,
+                  glat: Numeric,
+                  glon: Numeric,
+                  Nbins: int = 100,
+                  fmono: float = 0,
+                  emono: float = 0,
+                  itail: bool = False,
+                  density_perturbation: Sequence = None,
+                  *,
+                  geomag_params: dict | Iterable = None,
+                  tzaware: bool = False,
+                  tec: Numeric | Dataset = None,
+                  metadata: dict = None) -> xarray.Dataset:
+    """## GLOW model with monoenergetic precipitation.
+
+    ### Args:
+        - `time (datetime)`: Model evaluation time.
+        - `glat (Numeric)`: Location latitude (degrees).
+        - `glon (Numeric)`: Location longitude (degrees).
+        - `Nbins (int)`: Number of energy bins (must be >= 10). Defaults to 100.
+        - `fmono (float, optional)`: Monoenergetic energy flux, erg/cm^2. Defaults to 0.
+        - `emono (float, optional)`: Monoenergetic characteristic energy, keV. Defaults to 0.
+        - `itail (bool, optional)`: Disable/enable low-energy tail. Defaults to False.
+        - `density_perturbation (Sequence, optional)`: Density perturbations of O, O2, N2, NO, N(4S), N(2D) and e-. 
+           Supply as a sequence of length 7. Values must be positive. Defaults to None (all ones, i.e. no modification).
+        - `geomag_params (dict | Iterable, optional)`: Custom geomagnetic parameters.
+            - `f107a` (running average F10.7 over 81 days), 
+            - `f107` (current day F10.7), 
+            - `f107p` (previous day F10.7), and
+            - `Ap` (the global 3 hour $a_p$ index). 
+
+            Must be present in this order for list or tuple, and use these keys for the dictionary. Defaults to None.
+        - `tzaware (bool, optional)`: If time is time zone aware. If true, `time` is recast to 'UTC' using `time.astimezone(pytz.utc)`. Defaults to False.
+        - `tec (Numeric | Dataset, optional)`: Total Electron Content (TEC) in TECU. Defaults to None. Used to scale IRI-90 derived electron density.
+
+            If `Dataset`, must contain the following coordinates:
+                - `timestamps` (`datetime64[ns]`): Timestamp of the TEC map,
+                - `gdlat` (`float64`): Geodetic latitude in degrees,
+                - `glon` (`float64`): Geocentric longitude in degrees,
+            and the following data variable:
+                - `tec` (`float64`): TEC in TECU.
+
+            The nearest spatio-temporal TEC value is used to scale the electron density. This
+            dataset format is compatible with the GPS TEC maps from the Madrigal database.
+        - `metadata (dict, optional)`: Metadata to be added to the output dataset. Defaults to None.
+
+    ### Raises:
+        Refer to `generic` for details.
+
+    ### Returns:
+        - `xarray.Dataset`: GLOW model output dataset.
+    """
+    mod = GlowModel()  # Get an instance of the GLOW model
+    mod.reset()
+    mod.setup(time, glat, glon, Nbins, geomag_params=geomag_params, tzaware=tzaware)
+    mod.precipitation(0.001, 0.1, fmono=fmono, emono=emono, itail=itail)
+    ds = mod(density_perturbation=density_perturbation, tec=tec)
+    _ = metadata
+    return ds
