@@ -37,7 +37,7 @@ $ pip install glowpython
 Install from source repository by:
 
 ```sh
-$ git clone https://github.com/sunipkm/glowpython
+$ git clone https://github.com/sunipkm/glowpython -b development
 $ cd glowpython && pip install .
 ```
 
