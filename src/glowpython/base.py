@@ -393,6 +393,7 @@ class GlowModel(Singleton):
         ds.attrs['itail'] = cglow.itail
         ds.attrs['fmono'] = cglow.fmono
         ds.attrs['emono'] = cglow.emono
+<<<<<<< Updated upstream
 
     def setup(self, time: datetime,
               glat: Numeric,
@@ -556,6 +557,8 @@ class GlowModel(Singleton):
         ds.attrs['fmono'] = cglow.fmono
         ds.attrs['emono'] = cglow.emono
         return
+=======
+>>>>>>> Stashed changes
 
     def atmosphere(self, density_perturbation: Sequence = None, tec: Numeric | Dataset = None) -> None:
         """## Evaluate the atmosphere
