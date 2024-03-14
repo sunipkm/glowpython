@@ -27,5 +27,8 @@ dist/
 **/*.out
 **/*.app
 
+# Logs
+**/*.log
+
 # Others
 *.txt

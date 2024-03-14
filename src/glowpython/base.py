@@ -3,15 +3,16 @@ from os import path
 import pytz
 import geomagdata as gi
 from datetime import datetime, timedelta
-from numpy import allclose, asarray, float32, isnan, ones, trapz, zeros, copy
+from numpy import allclose, array, asarray, float32, isnan, ndarray, ones, trapz, zeros, copy
 from xarray import Dataset, Variable
 import xarray
 from .utils import Singleton, alt_grid, glowdate, geocent_to_geodet, interpolate_nan
-from .glowfort import cglow, cglow as cg, mzgrid, maxt, glow, conduct  # type: ignore
-from . import glowfort
+from .glowfort import cglow, cglow as cg, mzgrid, maxt, glow, conduct_iface  # type: ignore
 from typing import Any, Iterable, Sequence, SupportsFloat as Numeric, Tuple
 import atexit
 import warnings
+
+from multiprocessing import current_process
 
 # Suppress FutureWarnings
 warnings.simplefilter(action='once', category=FutureWarning)
@@ -23,31 +24,21 @@ cglow.jmax = 0   # initialize this to zero
 cglow.nbins = 0  # initialize this to zero
 
 
-def init_cglow(jmax: int, nbins: int, force_realloc: bool = False) -> None:
+def init_cglow() -> None:
     """## Initialize FORTRAN `cglow` module.
-    Additionally, calculates the altitude grid.
-
-    ### Args:
-        - `jmax (int)`: Number of altitude bins.
-        - `nbins (int)`: Number of energy bins.
-        - `force_realloc (bool, optional)`: Force reallocation of FORTRAN arrays. Defaults to False.
+    This function must be called ONCE and ONLY ONCE before using the GLOW model.
     """
-    if force_realloc:
-        release_cglow()
-    if cglow.jmax == jmax and cglow.nbins == nbins:  # no reallocation required
-        return
-    if (cglow.jmax != jmax or cglow.nbins != nbins) and (cglow.nbins != 0 and cglow.jmax != 0):  # reallocation required
-        release_cglow()
-    cglow.jmax = jmax
-    cglow.nbins = nbins
     cglow.data_dir.put(0, '{: <1024s}'.format(DATA_DIR))
-    cglow.cglow_init()
+    cglow.cglow_static_init()
+    cglow.jmax = 0
+    cglow.nbins = 0
 
 
 @atexit.register
 def release_cglow():
     '## Deallocate all allocatable `cglow` arrays.'
-    glowfort.cglow_release()
+    cglow.cglow_dynamic_dealloc()
+    cglow.cglow_static_deinit()
     cglow.jmax = 0
     cglow.nbins = 0
 
@@ -71,346 +62,209 @@ def reset_cglow(jmax: int = None, nbins: int = None) -> None:
         return
     if jmax == 0 or nbins == 0:
         raise ValueError('jmax or nbins is zero, cannot reset, impossible state')
-    release_cglow()
-    init_cglow(jmax, nbins)
-
-
-def set_standard_switches(iscale: int = 1) -> None:
-    """## Set standard switches for CGLOW model.
-
-    ### Args:
-        - `iscale (int, optional)`: Solar flux model. 
-            - Defaults to 1 (EUVAC model). 
-            - Use 0 for Hinteregger, and 2 for user-supplied solar flux model. 
-
-            In that case, `data/ssflux_user.dat` must be contain the user-supplied solar flux model.
-
-    ### Raises:
-        `ValueError`: `iscale` must be between `0` and `2`.
-    """
-    reinit = False
-    if cglow.jmax != 0 and cglow.nbins != 0 and cglow.iscale != iscale:  # re-initialization required
-        reinit = True
-
-    if iscale < 0 or iscale > 2:
-        raise ValueError('iscale must be between 0 and 2')
-
-    cglow.iscale = iscale
-
-    if reinit:
-        reset_cglow()
+    realloc = False
+    if cglow.jmax != jmax or cglow.nbins != nbins:
+        realloc = True
+    # set the values
+    cglow.jmax = jmax
+    cglow.nbins = nbins
+    # perform the allocation
+    if realloc:
+        cglow.cglow_dynamic_dealloc()  # deallocate if allocated
+        cglow.cglow_dynamic_alloc()  # allocate
+        cglow.cglow_dynamic_zero()  # zero out the arrays
+        cglow.egrid_init()  # initialize energy grid
 
 
 class GlowModel(Singleton):
     """## GLOW Model Singleton Class.
     This class is a singleton and should be used to evaluate the GLOW model.
     The class is a singleton because the FORTRAN module `cglow` is not thread-safe.
+    The class provides methods to initialize the model, set up the model for evaluation,
+    evaluate the atmosphere, optionally model the precipitating electrons 
+    (in case of aurora), run the radiative transfer model, and retrieve the result.
 
-    ### Example:
-    ```python
+    This class is compatible with the `multiprocessing` module, and can be used in a
+    multi-process environment.
+
+    ### Example (single evaluation):
+    >>> from glowpython import GlowModel
+    >>> from datetime import datetime
     >>> mod = GlowModel()
-    >>> mod.reset() # reset the model, this step is mandatory
     >>> mod.setup(datetime(2020, 1, 1, 0, 0), 65, 0) # setup the model
     >>> mod.precipitation() # set the precipitation parameters (optional)
     >>> mod.atmosphere() # evaluate the atmosphere
     >>> mod.radtrans() # run the radiative transfer model
     >>> ds = mod.result() # get the result
-    ```
+
+    ### Example (multi-process evaluation):
+    >>> from multiprocessing import Pool
+    >>> def eval_glow(time, lat, lon):
+    >>>     mod = GlowModel()
+    >>>     mod.setup(time, lat, lon)
+    >>>     res = mod()
+    >>>     return res
+    >>> times = [datetime(2020, 1, 1)]*4
+    >>> lat = [0, 10, 20, 30]
+    >>> lon = [0, 10, 20, 30]
+    >>> with Pool(4) as pool:
+    >>>     results = pool.starmap(eval_glow, zip(times, lat, lon))
     """
 
-    def __init__(self) -> None:
+    def _init(self) -> None:
         """## Create an instance of the GLOW Model Singleton Class.
         On creation, the model is reset and initialized with standard
-        values for the switches. Refer to :method:`GlowModel.reset` method for more details.
+        values for the switches. This method is private and should
+        not be called directly. Use the `GlowModel` class to get an instance.
+        The creation of the first instance triggers this function.
         """
-        self.reset()
-        pass
-
-    def initialize(self, alt_km: int | Iterable = 250, nbins: int = 100, iscale: int = 1, *, wave1: Sequence = None, wave2: Sequence = None, rflux: Sequence = None) -> None:
-        """## Initialize GLOW model.
-
-        ### Args:
-            - `alt_km (int | Iterable, optional)`: Altitude grid length/altitude grid. Defaults to 250.
-                - `int`: Length of altitude grid. The altitude grid is then evaluated using the `alt_grid` function.
-                - `Iterable`: Custom altitude grid. Must be a 1-D array, and between 60 and 1000 km.
-            - `nbins (int, optional)`: Number of energy bins. Defaults to 100.
-
-        ### Raises:
-            - `RuntimeError`: Reset the model before initializing.
-            - `ValueError`: Altitude grid must be between 60 and 1000 km.
-            - `ValueError`: Altitude grid must be a 1-D array.
-            - `ValueError`: Number of energy bins must be >= 10.
-        """
-        if not self._reset:
-            raise RuntimeError('Reset the model before initializing')
-        realloc = False  # assume we don't have to reallocate
-        release = (cglow.jmax != 0 and cglow.nbins != 0)  # release if already initialized
-        # deal with altitude grid
-        if isinstance(alt_km, int):
-            if alt_km != cglow.jmax:
-                realloc = True
-                alt_km = alt_grid(alt_km, 60., 0.5, 4.)
-                cglow.jmax = len(alt_km)
-                cglow.z = alt_km
-        elif isinstance(alt_km, Iterable):
-            alt_km = asarray(alt_km, dtype=float32, order='F')
-            if any(alt_km < 60) or any(alt_km > 1000):
-                raise ValueError('Altitude grid must be between 60 and 1000 km')
-            if alt_km.ndim != 1:
-                raise ValueError('alt_km must be a 1-D array')
-            if cglow.jmax != len(alt_km):
-                realloc = True
-                cglow.jmax = len(alt_km)
-            if not allclose(cglow.z, alt_km):
-                cglow.z = alt_km
-        # deal with energy grid
-        if nbins is None and cglow.nbins == 0:
-            raise ValueError('nbins must be specified if not already initialized')
-        if nbins is not None:
-            if nbins < 10:
-                raise ValueError('Number of energy bins must be >= 10')
-            if nbins != cglow.nbins:
-                realloc = True
-                cglow.nbins = nbins
-        # do realloc
-        if realloc:
-            if release:
-                release_cglow()
-            cglow.data_dir.put(0, '{: <1024s}'.format(DATA_DIR))
-            cglow.cglow_init()
-            cg.zz = cg.z * 1e5  # fill altitude array, converting to cm
-
-        self._initd = True
-        self._ready = False
-        self._atm = False
-        self._evaluated = False
-
-    def reset(self, iscale: int = 1) -> None:
-        """## Reset switches for CGLOW model.
-        Pass no arguments to use the standard settings.
-        MUST call `initialize`/`set_altitude` after calling this method.
-
-        ### Args:
-            - `iscale (int, optional)`: Solar flux model. 
-                - Defaults to 1 (EUVAC model). 
-                - Use 0 for Hinteregger, and 2 for user-supplied solar flux model. 
-
-                In that case, `data/ssflux_user.dat` must be contain the user-supplied solar flux model.
-
-        ### Raises:
-            `ValueError`: `iscale` must be between `0` and `2`.
-            `ValueError`: `kchem` must be between `0` and `4`.
-        """
+        init_cglow()  # initialize the cglow module
         self._reset = True
         self._initd = False
         self._ready = False
         self._atm = False
         self._evaluated = False
-        set_standard_switches(iscale)
+        self._z = zeros(0, dtype=float32, order='F')
+        self.initialize()
+        return self
 
-    def result(self, copy: bool = True) -> xarray.Dataset:
-        """## Get the GLOW model output dataset.
-        This function returns a deep or shallow copy of the GLOW model output dataset.
-        - The shallow copy **IS NOT** thread safe. 
-        - Use `copy=True` to get a deep copy.
-        - Deep copies of result are available **ONLY AFTER** evaluation.
+    def initialize(self, alt_km: int | Iterable = 250, nbins: int = 100, iscale: int = 1, *, wave1: Sequence = None, wave2: Sequence = None, rflux: Sequence = None) -> None:
+        """## Initialize Inputs
+        Initializes the altitude grid, energy bins and solar flux model.
 
-        ### Args:
-            - `copy (bool, optional)`: Return a deep copy. Defaults to True.
-
-        ### Returns:
-            - `xarray.Dataset`: GLOW model output dataset.
-
+       ### Args:
+            - `alt_km (int | Iterable, optional)`: Altitude grid length/altitude grid. Defaults to 250.
+                - `None`: Uses the previous value of `jmax` and altitude grid.
+                - `int`: Length of altitude grid. The altitude grid is then evaluated using the `alt_grid` function.
+                - `Iterable`: Custom altitude grid. Must be a 1-D array, and between 60 and 1000 km.
+            - `nbins (int, optional)`: Number of energy bins. Defaults to 100.
+            - `iscale (int, optional)`: Solar flux model. Defaults to 1 (EUVAC model). 
+                - `0`: Hinteregger Model
+                - `1`: EUVAC Model
+                - `2`: User-supplied solar flux model. In this case, `wave1`, `wave2` and `rflux` must be supplied.
+            - `wave1 (Sequence, optional)`: Starting points of the solar flux wavelength bins (`length=123`). Defaults to None. Required if `iscale` is 2.
+            - `wave2 (Sequence, optional)`: Ends of the solar flux wavelength bins. Defaults to None. Required if `iscale` is 2.
+            - `rflux (Sequence, optional)`: Solar flux values. Defaults to None. Required if `iscale` is 2.
         ### Raises:
-            - `RuntimeError`: GLOW model not initialized.
-            - `RuntimeError`: GLOW model not evaluated, in case a deep copy is requested without evaluation.
+            - `RuntimeError`: Reset the model before initializing.
+            - `ValueError`: `alt_km` must be specified if not already initialized.
+            - `ValueError`: Altitude grid must be between 60 and 1000 km.
+            - `ValueError`: Altitude grid must be a 1-D array.
+            - `ValueError`: `nbins` must be specified if not already initialized.
+            - `ValueError`: Number of energy bins must be >= 10.
+            - `ValueError`: `iscale` must be between `0` and `2`.
+            - `ValueError`: `wave1`, `wave2` and `rflux` must be supplied if `iscale` is 2.
+            - `ValueError`: `wave1`, `wave2` and `rflux` must be 1-D arrays.
+            - `ValueError`: `wave1`, `wave2` and `rflux` must be of the same length.
+            - `ValueError`: `wave1`, `wave2` and `rflux` must be of length 123.
+            - `ValueError`: `wave1` and `wave2` must be sorted.
+            - `ValueError`: `wave1` and `wave2` must be sorted in the same order.
         """
-        if not self._initd:
-            raise RuntimeError('GLOW model not initialized')
-        if not self._evaluated and copy:
-            raise RuntimeError('GLOW model not evaluated')
-        return self._ds.copy(deep=copy)
+        if not self._reset:
+            raise RuntimeError('Reset the model before initializing')
+        # deal with altitude grid
+        if alt_km is None:
+            if cglow.jmax == 0:
+                raise ValueError('alt_km must be specified if not already initialized')
+            jmax = cglow.jmax
+        elif isinstance(alt_km, int):
+            jmax = alt_km
+            if jmax != len(self._z):
+                self._z = alt_grid(jmax, 60., 0.5, 4.)
+            else:
+                tmp = alt_grid(jmax, 60., 0.5, 4.)
+                if not allclose(self._z, tmp):
+                    self._z = tmp
+        elif isinstance(alt_km, Iterable):
+            alt_km = array(alt_km, dtype=float32, order='F')  # always make a copy
+            if any(alt_km < 60) or any(alt_km > 1000):
+                raise ValueError('Altitude grid must be between 60 and 1000 km')
+            if alt_km.ndim != 1:
+                raise ValueError('alt_km must be a 1-D array')
+            jmax = len(alt_km)
+            self._z = alt_km
+        # deal with energy grid
+        if nbins is None and cglow.nbins == 0:
+            raise ValueError('nbins must be specified if not already initialized')
+        if nbins is not None and nbins < 10:
+            raise ValueError('Number of energy bins must be >= 10')
+        # do realloc
+        reset_cglow(jmax, nbins)
+        cg.zz = self._z * 1e5  # convert to cm
 
-    def altitude_grid(self) -> xarray.DataArray:
-        """## Get the altitude grid.
+        if not 0 <= iscale <= 2:
+            raise ValueError('iscale must be between 0 and 2')
 
-        ### Raises:
-            - `RuntimeError`: GLOW model not initialized.
+        if iscale == 2:
+            if wave1 is None or wave2 is None or rflux is None:
+                raise ValueError('wave1, wave2 and rflux must be supplied if iscale is 2')
+            wave1: ndarray = array(wave1, dtype=float32, order='F')
+            wave2: ndarray = array(wave2, dtype=float32, order='F')
+            rflux: ndarray = array(rflux, dtype=float32, order='F')
+            if wave1.ndim != 1 or wave2.ndim != 1 or rflux.ndim != 1:
+                raise ValueError('wave1, wave2 and rflux must be 1-D arrays')
+            if len(wave1) != len(wave2) or len(wave2) != len(rflux):
+                raise ValueError('wave1, wave2 and rflux must be of the same length')
+            if len(wave1) != cg.lmax:
+                raise ValueError('wave1, wave2 and rflux must be of length %d' % cg.lmax)
 
-        ### Returns:
-            - `xarray.DataArray`: Altitude grid (km).
-        """
-        if not self._initd:
-            raise RuntimeError('GLOW model not initialized')
-        return self._ds['alt_km'].copy(deep=True)
-    
-    def setup(self, time: datetime,
-              glat: Numeric,
-              glon: Numeric,
-              nbins: int = 100,
-              *,
-              geomag_params: dict | Iterable = None,
-              tzaware: bool = False,
-              alt_km: int | Iterable = 250) -> None:
-        """## Setup the GLOW model for evaluation.
-        Initializes the `cglow` module if not initialized, and sets the input parameters for the GLOW model. Additionally, calculates the auroral electron flux using the `glowfort.maxt` subroutine if needed.
-
-        ### Args:
-            - `time (datetime)`: Model evaluation time.
-            - `glat (Numeric)`: Location latitude (degrees).
-            - `glon (Numeric)`: Location longitude (degrees).
-            - `nbins (int, optional)`: Number of energy bins (must be >= 10). Defaults to 100.
-            - `geomag_params (dict | Iterable, optional)`: Custom geomagnetic parameters.
-                - `f107a` (running average F10.7 over 81 days), 
-                - `f107` (current day F10.7), 
-                - `f107p` (previous day F10.7), and
-                - `Ap` (the global 3 hour $a_p$ index). 
-                
-                Must be present in this order for list or tuple, and use these keys for the dictionary. Defaults to None.
-            - `tzaware (bool, optional)`: If time is time zone aware. If true, `time` is recast to 'UTC' using `time.astimezone(pytz.utc)`. Defaults to False.
-            - `alt_km (int | Iterable, optional)`: See :method:`Glow.initialize` for documentation. Defaults to 250.
-
-        ### Raises:
-            - `RuntimeError`: Invalid type for geomagnetic parameters.
-        """
-        self.initialize(alt_km, nbins)
-
-        if tzaware:
-            time = time.astimezone(pytz.utc)
-
-        self._time = time
-
-        idate, utsec = glowdate(time)
-
-        if geomag_params is None:
-            ip = gi.get_indices([time - timedelta(days=1), time], 81, tzaware=tzaware)
-            f107a = float(ip["f107s"].iloc[1])
-            f107 = float(ip['f107'].iloc[1])
-            f107p = float(ip['f107'].iloc[0])
-            ap = float(ip["Ap"].iloc[1])
-        elif isinstance(geomag_params, dict):
-            f107a = float(geomag_params['f107a'])
-            f107 = float(geomag_params['f107'])
-            f107p = float(geomag_params['f107p'])
-            ap = float(geomag_params['Ap'])
-        elif isinstance(geomag_params, Iterable):
-            f107a = float(geomag_params[0])
-            f107 = float(geomag_params[1])
-            f107p = float(geomag_params[2])
-            ap = float(geomag_params[3])
+            def ascending(a): return int(all(a[:-1] <= a[1:]))*1
+            def descending(a): return int(all(a[:-1] >= a[1:]))*(-1)
+            def is_sorted(a): return all(a[:-1] <= a[1:]) or all(a[:-1] >= a[1:])
+            if not is_sorted(wave1) or not is_sorted(wave2):
+                raise ValueError('wave1 and wave2 must be sorted')
+            if ascending(wave1) + descending(wave2) == 0:
+                raise ValueError('wave1 and wave2 must be sorted in the same order')
+            if ascending(wave1):  # in ascending order, reverse
+                wave1 = wave1[::-1]
+                wave2 = wave2[::-1]
+                rflux = rflux[::-1]
+            cg.iscale = iscale
+            cg.wave1 = wave1
+            cg.wave2 = wave2
+            cg.sflux = rflux
         else:
-            raise RuntimeError('Invalid type %s for geomag params %s' % (str(type(geomag_params), str(geomag_params))))
-
-        ip = {}
-        ip['f107a'] = (f107a)
-        ip['f107'] = (f107)
-        ip['f107p'] = (f107p)
-        ip['ap'] = (ap)
-
-        self._ip = ip
-
-        _glon = glon  # unmodified for dataset
-        glon = glon % 360
-
-        (cg.idate, cg.ut, cg.glat, cg.glong, cg.f107a,
-         cg.f107, cg.f107p, cg.ap) = \
-            (idate, utsec, glat, glon, f107a, f107, f107p, ap)
-
-        self._stl = (cg.ut/3600. + cg.glong/15.) % 24
-
-        ds = Dataset(coords={'alt_km': ('alt_km', cg.z, {'standard_name': 'altitude',
-                                                         'long_name': 'altitude',
-                                                         'units': 'km'}),
-                             'energy': ('energy', cg.ener, {'long_name': 'precipitation energy',
-                                                            'units': 'eV'})},
-                     data_vars={'precip': ('energy', cg.phitop, {
-                         'long_name': 'auroral electron flux',
-                         'units': 'cm^{-2} s^{-1} eV^{-1}'}
-                     )}
-                     )
-
-        ds['sflux'] = Variable('wave', cg.sflux,
-                               {'long_name': 'solar flux',
-                                'units': 'cm^{-2} s^{-1}',
-                                'comment': 'scaled solar flux'})
-        wave_attrs = {'long_name': 'wavelength',
-                      'units': 'Å'}
-        ds.coords['wave1'] = ('wave', cg.wave1, wave_attrs)
-        ds.coords['wave1'].attrs['comment'] = 'longwave edge of solar flux wavelength range'
-        ds.coords['wave2'] = ('wave', cg.wave2, wave_attrs)
-        ds.coords['wave2'].attrs['comment'] = 'shortwave edge of solar flux wavelength range'
-
-        ds.attrs["geomag_params"] = ip
-        ds.attrs["time"] = time.isoformat()
-        ds.attrs["glatlon"] = (glat, _glon)
-        ds.attrs['iscale'] = cglow.iscale
-        ds.attrs['xuvfac'] = cglow.xuvfac
-
-        self._ds = ds
+            cg.iscale = iscale
+            cg.sflux_init()
 
         self._initd = True
-        self._ready = True
+        self._ready = False
+        self._atm = False
         self._evaluated = False
 
-    def precipitation(self,
-                      Q: Numeric = None,
-                      Echar: Numeric = None, 
-                      *,
-                      itail: bool = False, 
-                      fmono: Numeric = 0, 
-                      emono: Numeric = 0):
-        """## Set the precipitation parameters.
+    def reset(self, clear: bool = False) -> None:
+        """## Reset the GLOW model.
+        Resets the GLOW model to its initial state and clears previous result.
+        Call this method after retrieving the result to zero
+        out the arrays and re-initialize the energy grid.
 
         ### Args:
-            - `itail (bool, optional)`: Disable/enable low-energy tail. Defaults to False.
-            - `fmono (float, optional)`: Monoenergetic energy flux, erg/cm^2. Defaults to 0.
-            - `emono (float, optional)`: Monoenergetic characteristic energy, keV. Defaults to 0.
+            - `clear (bool, optional)`: Clear internal FORTRAN arrays to zero, and recalculate energy grid. Defaults to False.
         """
-        if Q is None or Echar is None:  # no precipitation case
-            Q = 0.0001
-            Echar = 0.1
-        cglow.ef = Q
-        cglow.ec = Echar
-        cglow.itail = 1 if itail else 0
-        cglow.fmono = fmono
-        cglow.emono = emono
+        if clear:
+            cglow.cglow_dynamic_zero()  # zero out the arrays
+            cglow.egrid_init()  # re-initialize energy grid
 
-        # ! Call MAXT to put auroral electron flux specified by namelist input into phitop array:
-        cg.phitop[:] = 0.
-        if cg.ef > 0.001 and cg.ec > 1:
-            cg.phitop = maxt(cg.ef, cg.ec, cg.ener, cg.edel, cg.itail,
-                             cg.fmono, cg.emono)
-            
-        ds = self._ds
-            
-        if Q is not None and Echar is not None:
-            ds.attrs['Q'] = Q
-            ds.attrs['Echar'] = Echar
-        else:
-            ds.attrs['Q'] = 0
-            ds.attrs['Echar'] = 0
-
-        ds.attrs['itail'] = cglow.itail
-        ds.attrs['fmono'] = cglow.fmono
-        ds.attrs['emono'] = cglow.emono
-<<<<<<< Updated upstream
+        self._ds = Dataset() # empty dataset
+        self._ready = False
+        self._atm = False
+        self._evaluated = False
 
     def setup(self, time: datetime,
               glat: Numeric,
               glon: Numeric,
-              nbins: int = 100,
               *,
               geomag_params: dict | Iterable = None,
-              tzaware: bool = False,
-              alt_km: int | Iterable = 250) -> None:
+              tzaware: bool = False,) -> None:
         """## Setup the GLOW model for evaluation.
         Initializes the `cglow` module if not initialized, and sets the input parameters for the GLOW model. Additionally, calculates the auroral electron flux using the `glowfort.maxt` subroutine if needed.
+
+        Calls :method:`GlowModel.initialize` to initialize the altitude grid, energy bins and solar flux model.
 
         ### Args:
             - `time (datetime)`: Model evaluation time.
             - `glat (Numeric)`: Location latitude (degrees).
             - `glon (Numeric)`: Location longitude (degrees).
-            - `nbins (int, optional)`: Number of energy bins (must be >= 10). Defaults to 100.
             - `geomag_params (dict | Iterable, optional)`: Custom geomagnetic parameters.
                 - `f107a` (running average F10.7 over 81 days), 
                 - `f107` (current day F10.7), 
@@ -419,12 +273,13 @@ class GlowModel(Singleton):
 
                 Must be present in this order for list or tuple, and use these keys for the dictionary. Defaults to None.
             - `tzaware (bool, optional)`: If time is time zone aware. If true, `time` is recast to 'UTC' using `time.astimezone(pytz.utc)`. Defaults to False.
-            - `alt_km (int | Iterable, optional)`: See :method:`Glow.initialize` for documentation. Defaults to 250.
 
         ### Raises:
+        - `RuntimeError`: Initialize the model before setting up.
             - `RuntimeError`: Invalid type for geomagnetic parameters.
         """
-        self.initialize(alt_km, nbins)
+        if not self._initd:
+            raise RuntimeError('Initialize the model before setting up')
 
         if tzaware:
             time = time.astimezone(pytz.utc)
@@ -469,7 +324,7 @@ class GlowModel(Singleton):
 
         cg.phitop[:] = 0.
 
-        ds = Dataset(coords={'alt_km': ('alt_km', cg.z, {'standard_name': 'altitude',
+        ds = Dataset(coords={'alt_km': ('alt_km', self._z, {'standard_name': 'altitude',
                                                          'long_name': 'altitude',
                                                          'units': 'km'}),
                              'energy': ('energy', cg.ener, {'long_name': 'precipitation energy',
@@ -534,9 +389,17 @@ class GlowModel(Singleton):
             - `fmono (float, optional)`: Monoenergetic energy flux, erg/cm^2. Defaults to 0.
             - `emono (float, optional)`: Monoenergetic characteristic energy, keV. Defaults to 0.
         """
+        if not self._initd:
+            raise RuntimeError('Initialize the model before setting up')
+        ds = self._ds
+
+        if Q is not None and Echar is not None:
+            ds.attrs['Q'] = Q
+            ds.attrs['Echar'] = Echar
         if Q is None or Echar is None:  # no precipitation case
             Q = 0.0001
             Echar = 0.1
+
         cglow.ef = Q
         cglow.ec = Echar
         cglow.itail = 1 if itail else 0
@@ -547,18 +410,10 @@ class GlowModel(Singleton):
         cg.phitop = maxt(cg.ef, cg.ec, cg.ener, cg.edel, cg.itail,
                          cg.fmono, cg.emono)
 
-        ds = self._ds
-
-        if Q is not None and Echar is not None:
-            ds.attrs['Q'] = Q
-            ds.attrs['Echar'] = Echar
-
         ds.attrs['itail'] = cglow.itail
         ds.attrs['fmono'] = cglow.fmono
         ds.attrs['emono'] = cglow.emono
         return
-=======
->>>>>>> Stashed changes
 
     def atmosphere(self, density_perturbation: Sequence = None, tec: Numeric | Dataset = None) -> None:
         """## Evaluate the atmosphere
@@ -632,7 +487,7 @@ class GlowModel(Singleton):
         (cg.zo, cg.zo2, cg.zn2, cg.zns, cg.znd, cg.zno, cg.ztn,
          cg.zun, cg.zvn, cg.ze, cg.zti, cg.zte, cg.zxden) = \
             mzgrid(cg.nex, cg.idate, cg.ut, cg.glat, cg.glong,
-                   stl, cg.f107a, cg.f107, cg.f107p, cg.ap, cg.z, IRI90_DIR)
+                   stl, cg.f107a, cg.f107, cg.f107p, cg.ap, self._z, IRI90_DIR)
 
         # Apply the density perturbations
         cg.zo *= density_perturbation[0]
@@ -733,6 +588,7 @@ class GlowModel(Singleton):
          - `glowfort.gchem`: Calculate the densities of excited and ionized
            constituents, airglow emission rates, and vertical column brightness.
          - `glowfort.bands`: Calculate the LBH specific airglow emission rates.
+         - `glowfort.conduct`: Calculate the Pederson and Hall conductivities.
 
         ### Args:
             - `xuvfac (int, optional)`: XUV enhancement factor. Defaults to 3.
@@ -756,8 +612,6 @@ class GlowModel(Singleton):
             - `ValueError`: `ion_n` and `ion_n2` must be specified for `kchem = 2`.
             - `ValueError`: `Invalid dimensions for ion density profiles`.
         """
-        if not self._ready:
-            raise RuntimeError('GLOW model not ready for evaluation. Run `setup` first.')
         if not self._atm:
             raise RuntimeError('Atmosphere not evaluated. Run `atmosphere` (and `precipitation` if needed) first.')
         cglow.xuvfac = xuvfac
@@ -811,11 +665,12 @@ class GlowModel(Singleton):
         # ! and vertical column brightnesses:
         glow()
         # ! Call CONDUCT to calculate Pederson and Hall conductivities:
-        pedcond = zeros((cg.jmax,), cg.z.dtype)
+        pedcond = zeros((cg.jmax,), self._z.dtype)
         hallcond = pedcond.copy()
-        for j in range(cg.jmax):
-            pedcond[j], hallcond[j] = conduct(cg.glat, cg.glong, cg.z[j], cg.zo[j], cg.zo2[j], cg.zn2[j],
-                                              cg.zxden[2, j], cg.zxden[5, j], cg.zxden[6, j], cg.ztn[j], cg.zti[j], cg.zte[j])
+        conduct_iface(self._z, pedcond, hallcond) # loop in FORTRAN
+        # for j in range(cg.jmax):
+        #     pedcond[j], hallcond[j] = conduct(cg.glat, cg.glong, self._z[j], cg.zo[j], cg.zo2[j], cg.zn2[j],
+        #                                       cg.zxden[2, j], cg.zxden[5, j], cg.zxden[6, j], cg.ztn[j], cg.zti[j], cg.zte[j])
 
         ds = self._ds
 
@@ -844,7 +699,7 @@ class GlowModel(Singleton):
                       'source': 'IRI-90'}
                      )
         # Emissions
-        ds['ver'] = Variable(('alt_km', 'wavelength'), copy(cg.zeta).T, {
+        ds['ver'] = Variable(('alt_km', 'wavelength'), cg.zeta.T, {
             'long_name': 'Volume Emission Rate',
             'units': 'cm^{-3} s^{-1}',
             'description': 'Volume Emission Rate',
@@ -946,9 +801,10 @@ class GlowModel(Singleton):
 
         ds.attrs['xuvfac'] = xuvfac
         ds.attrs['kchem'] = kchem
-        ds.attrs['jlocal'] = jlocal
+        ds.attrs['jlocal'] = cglow.jlocal
 
         self._evaluated = True
+        return
 
     def evaluate(self, xuvfac: int = 3, jlocal: bool = False, kchem: int = 4, *,
                  density_perturbation: Sequence = None,
@@ -980,6 +836,42 @@ class GlowModel(Singleton):
         self.atmosphere(density_perturbation, tec)
         self.radtrans(xuvfac, jlocal, kchem, ion_n=ion_n, ion_n2=ion_n2, ion_o=ion_o, ion_o2=ion_o2, ion_no=ion_no)
         return self.result()
+    
+    def result(self, copy: bool = True) -> xarray.Dataset:
+        """## Get the GLOW model output dataset.
+        This function returns a deep or shallow copy of the GLOW model output dataset.
+        - The shallow copy is **THREAD LOCAL** and not `Send`, i.e. can not be sent across or shared between threads. 
+        - Use `copy=True` to get a deep copy.
+        - Deep copies of result are available **ONLY AFTER** evaluation.
+
+        ### Args:
+            - `copy (bool, optional)`: Return a deep copy. Defaults to True.
+
+        ### Returns:
+            - `xarray.Dataset`: GLOW model output dataset.
+
+        ### Raises:
+            - `RuntimeError`: GLOW model not initialized.
+            - `RuntimeError`: GLOW model not evaluated, in case a deep copy is requested without evaluation.
+        """
+        if not self._initd:
+            raise RuntimeError('GLOW model not initialized')
+        if not self._evaluated and copy:
+            raise RuntimeError('GLOW model not evaluated')
+        return self._ds.copy(deep=copy)
+
+    def altitude_grid(self) -> xarray.DataArray:
+        """## Get the altitude grid.
+
+        ### Raises:
+            - `RuntimeError`: GLOW model not initialized.
+
+        ### Returns:
+            - `xarray.DataArray`: Altitude grid (km).
+        """
+        if not self._initd:
+            raise RuntimeError('GLOW model not initialized')
+        return self._ds['alt_km'].copy(deep=True)
 
     def __call__(self, xuvfac: int = 3, jlocal: bool = False, kchem: int = 4, *,
                  density_perturbation: Sequence = None,
@@ -1087,10 +979,10 @@ def generic(time: datetime,
         - `xarray.Dataset`: GLOW model output dataset.
     """
     mod = GlowModel()  # Get an instance of the GLOW model
-    mod.reset(iscale)
-    mod.setup(time, glat, glon, Nbins, geomag_params=geomag_params, tzaware=tzaware, alt_km=jmax)
+    mod.initialize(jmax, Nbins, iscale)
+    mod.setup(time, glat, glon, geomag_params=geomag_params, tzaware=tzaware)
     mod.precipitation(Q, Echar, itail=itail, fmono=fmono, emono=emono)
-    ds = mod(xuvfac, jlocal, kchem, density_perturbation=density_perturbation, tec=tec)
+    ds = mod.evaluate(xuvfac, jlocal, kchem, density_perturbation=density_perturbation, tec=tec)
     _ = metadata
     return ds
 
@@ -1146,8 +1038,12 @@ def maxwellian(time: datetime,
         - `xarray.Dataset`: GLOW model output dataset.
     """
     mod = GlowModel()  # Get an instance of the GLOW model
-    mod.reset()
-    mod.setup(time, glat, glon, Nbins, geomag_params=geomag_params, tzaware=tzaware)
+    if cg.jmax == 0:
+        alt_km = 250
+    else:
+        alt_km = None
+    mod.initialize(alt_km, Nbins)
+    mod.setup(time, glat, glon, geomag_params=geomag_params, tzaware=tzaware)
     mod.precipitation(Q, Echar)
     ds = mod(density_perturbation=density_perturbation, tec=tec)
     _ = metadata
@@ -1201,8 +1097,12 @@ def no_precipitation(time: datetime,
         - `xarray.Dataset`: GLOW model output dataset.
     """
     mod = GlowModel()  # Get an instance of the GLOW model
-    mod.reset()
-    mod.setup(time, glat, glon, Nbins, geomag_params=geomag_params, tzaware=tzaware)
+    if cg.jmax == 0:
+        alt_km = 250
+    else:
+        alt_km = None
+    mod.initialize(alt_km, Nbins)
+    mod.setup(time, glat, glon, geomag_params=geomag_params, tzaware=tzaware)
     ds = mod(density_perturbation=density_perturbation, tec=tec)
     _ = metadata
     return ds
@@ -1261,8 +1161,12 @@ def monoenergetic(time: datetime,
         - `xarray.Dataset`: GLOW model output dataset.
     """
     mod = GlowModel()  # Get an instance of the GLOW model
-    mod.reset()
-    mod.setup(time, glat, glon, Nbins, geomag_params=geomag_params, tzaware=tzaware)
+    if cg.jmax == 0:
+        alt_km = 250
+    else:
+        alt_km = None
+    mod.initialize(alt_km, Nbins)
+    mod.setup(time, glat, glon, geomag_params=geomag_params, tzaware=tzaware)
     mod.precipitation(0.001, 0.1, fmono=fmono, emono=emono, itail=itail)
     ds = mod(density_perturbation=density_perturbation, tec=tec)
     _ = metadata

@@ -7,6 +7,19 @@ A Fortran compiler is **REQUIRED**.
 <b>Note:</b> This version uses `meson` and `ninja` as the build system, and does not rely on `distutils`,
 and is Python 3.12 compatible.
 
+<b>This library also allows parallelization of model evaluation using the [multiprocessing](https://docs.python.org/3/library/multiprocessing.html) module.</b>
+
+Additionally, the `GlowModel` class exposes complete control over model evaluation, which is divided
+into the following fundamental steps:
+1. `initialize`: Set the altitude, energy grids and solar flux model (Hinteregger, EUVAC, custom).
+2. `setup`: Set the model up for evaluation, specifying time, location, and optionally geomagnetic parameters. If geomagnetic parameters are not specified, they are retrieved using [`geomagdata`](https://pypi.org/project/geomagdata/).
+3. `precipitation` (optional): Evaluate the energy and flux of precipitating electrons (Maxwellian or monoenergetic).
+4. `atmosphere`: Evaluate the neutral atmosphere (MSISE-00) and ionosphere (IRI-90).
+5. `radtrans`: Evaluate the GLOW radiative transfer model to calculate volume emission rates and ion composition.
+6. `result`: Retrieve the model output as a [xarray.Dataset](http://xarray.pydata.org/en/stable/generated/xarray.Dataset.html).
+
+<b>Note:</b> Between the `atmosphere` and `radtrans` steps, the intermediate dataset can be accessed using the `result` method by passing `copy=False`. This returns a reference to the internal dataset. Modifying the dataset in place allows for modifying the atmosphere and ionosphere presented to the `radtrans` step.
+
 ## Installation
 
 <b>Note:</b> For macOS Big Sur and above, you may need to add the following line to your environment script (`~/.zshrc` if using ZSH, or the relevant shell init script):

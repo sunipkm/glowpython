@@ -114,6 +114,12 @@ class Singleton(object):
     """
     ## A non-thread-safe helper class to ease implementing singletons.
     The class that should be a singleton should inherit from this class.
+
+    If the class requires initialization,
+    1. Do NOT provide an `__init__` method.
+    2. Instead, provide a `_init` method that will be called only once.
+    3. Classes that inherit from a class inheriting from `Singleton` will NOT
+    have its `_init` method called.
     """
     def __new__(cls):
         try:
@@ -121,6 +127,10 @@ class Singleton(object):
         except AttributeError:
             pass
         cls.__instance = super(Singleton, cls).__new__(cls)
+        try:
+            cls.__instance._init()
+        except AttributeError:
+            pass
         return cls.__instance
 
 

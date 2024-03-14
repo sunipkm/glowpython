@@ -32,7 +32,8 @@ fortran_srcs = [
   'src/GLOW/cglow.f90', 
   'src/GLOW/glow.f90', 
   'src/GLOW/bands.f90', 
-  'src/GLOW/conduct.f90', 
+  'src/GLOW/conduct.f90',
+  'src/GLOW/conduct_iface.f90',
   'src/GLOW/egrid.f90', 
   'src/GLOW/ephoto_init.f90', 
   'src/GLOW/ephoto.f90', 
@@ -53,7 +54,6 @@ fortran_srcs = [
   'src/GLOW/ssflux.f90', 
   'src/GLOW/iri90.f', 
   'src/GLOW/nrlmsise00.f', 
-  'src/GLOW/cglow_release.f90'
 ]
 
 glowpython_source = custom_target('glowfortmodule.c',

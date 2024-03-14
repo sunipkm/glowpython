@@ -7,6 +7,8 @@ The FORTRAN backend of the GLOW model is NOT thread-safe. This package provides
 a singleton class to ensure that only one instance of the GLOW model is used at
 a time. It is recommended to only use **ONE** instance of the `GlowModel` class
 at a time (in a loop) for repeated evaluations.
+Using the `multiprocessing` library, the user can spawn multiple processes to
+parallelize the evaluation of the GLOW model.
 
 Provides
     1. `GlowModel`: Base class for GLOW model. This is a singleton class.

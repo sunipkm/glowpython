@@ -147,16 +147,16 @@ endif
 
 ! User-supplied data:
 
-if (iscale == 2) then
-  ! if (islast /= iscale) then
-    filepath = trim(data_dir)//'ssflux_user.dat'
-    open(newunit=u,file=filepath,status='old',action='read')
-    read(u,*)
-    do l=lmax,1,-1
-      read(u,*) wave2(l),wave1(l),sf_rflux(l)
-    enddo
-    close(u)
-endif
+! if (iscale == 2) then
+!   ! if (islast /= iscale) then
+!     filepath = trim(data_dir)//'ssflux_user.dat'
+!     open(newunit=u,file=filepath,status='old',action='read')
+!     read(u,*)
+!     do l=lmax,1,-1
+!       read(u,*) wave2(l),wave1(l),sf_rflux(l)
+!     enddo
+!     close(u)
+! endif
 
 islast=iscale
 
