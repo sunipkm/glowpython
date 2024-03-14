@@ -33,6 +33,9 @@ Output Dataset:
         - `energy`: Energy grid (eV)
         - `state`: Neutral/Ionic excitation states (string)
         - `wavelength`: Wavelength of emission features in Angstrom (string). Represented as strings to accommodate the LBH band.
+        - `wave`: Solar flux wavelength (Angstrom)
+        - `dwave`: Solar flux wavelength bin width (Angstrom)
+        - `sflux`: Solar flux (W/m^2/Angstrom)
         - `tecscale`: TEC scale factor (float)
     - Data:
         - Dimension (`alt_km`):
@@ -76,6 +79,10 @@ Output Dataset:
         - `glatlon`: Geographic latitude and longitude of evaluation (degrees)
         - `Q`: Flux of precipitating electrons (erg/cm^2/s)
         - `Echar`: Characteristic energy of precipitating electrons (eV)
+        - 'f107a': 81-day average of F10.7 solar flux
+        - 'f107': Present day F10.7 solar flux
+        - 'f107p': Previous day F10.7 solar flux
+        - 'ap': Magnetic index
         - `iscale`: Solar flux model. 0: Hinteregger, 1: EUVAC
         - `xuvfac`: XUV enhancement factor. 
         - `itail`: Low energy tail enabled/disabled. 0: disabled, 1: enabled

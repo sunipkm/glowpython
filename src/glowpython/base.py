@@ -263,8 +263,6 @@ class GlowModel(Singleton):
         ip['f107p'] = (f107p)
         ip['ap'] = (ap)
 
-        self._ip = ip
-
         _glon = glon  # unmodified for dataset
         glon = glon % 360
 
@@ -291,26 +289,30 @@ class GlowModel(Singleton):
                      )}
                      )
 
-        ds['sflux'] = Variable('wave', cg.sflux,
-                               {'long_name': 'solar flux',
-                                'units': 'cm^{-2} s^{-1}',
-                                'comment': 'scaled solar flux'})
+        ds.coords['sflux'] = Variable('wave', cg.sflux,
+                                      {'long_name': 'solar flux',
+                                       'units': 'cm^{-2} s^{-1}',
+                                       'comment': 'scaled solar flux'})
         wave_attrs = {'long_name': 'wavelength',
                       'units': 'Å'}
-        ds.coords['wave1'] = ('wave', cg.wave1, wave_attrs)
-        ds.coords['wave1'].attrs['comment'] = 'longwave edge of solar flux wavelength range'
-        ds.coords['wave2'] = ('wave', cg.wave2, wave_attrs)
-        ds.coords['wave2'].attrs['comment'] = 'shortwave edge of solar flux wavelength range'
+        ds.coords['wave'] = ('wave', (cg.wave1 + cg.wave2)*0.5, wave_attrs)
+        ds.coords['wave'].attrs['description'] = 'Center of solar flux bins'
+        ds.coords['dwave'] = ('wave', cg.wave2 - cg.wave1, wave_attrs)
+        ds.coords['dwave'].attrs['description'] = 'Width of solar flux bins'
 
-        ds.attrs["geomag_params"] = ip
+        ds.attrs["time"] = time.isoformat()
+        ds.attrs["glatlon"] = (glat, _glon)
+
         if Q is not None and Echar is not None:
             ds.attrs['Q'] = Q
             ds.attrs['Echar'] = Echar
         else:
             ds.attrs['Q'] = 0
             ds.attrs['Echar'] = 0
-        ds.attrs["time"] = time.isoformat()
-        ds.attrs["glatlon"] = (glat, _glon)
+
+        for k, v in ip.items():
+            ds.attrs[k] = v
+
         ds.attrs['iscale'] = cglow.iscale
         ds.attrs['xuvfac'] = cglow.xuvfac
         ds.attrs['itail'] = cglow.itail
@@ -528,7 +530,7 @@ class GlowModel(Singleton):
             'long_name': 'TEC scaling factor',
             'description': 'Scaling factor applied to the electron density to match the TEC. 1.0 means no scaling.',
         })
-        ds.attrs['tecscale'] = tecscale  # for backward compatibility
+
         ds.coords['denperturb'] = ('denperturb', density_perturbation, {
             'long_name': 'Density Perturbation',
             'description': 'Density perturbation applied to the atmospheric densities. 1.0 means no perturbation.',
@@ -760,7 +762,7 @@ class GlowModel(Singleton):
                                                     'description': 'Ambient electron heating rate'})
         ds['Tez'] = Variable('alt_km', cg.tez, {'units': 'eV cm^{-3} s^{-1}',
                                                 'comment': 'total energetic electron energy deposition', 'long_name': 'energy deposition'})
-        
+
         ds.attrs['kchem'] = kchem
         ds.attrs['jlocal'] = jlocal
 
