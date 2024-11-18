@@ -41,6 +41,7 @@
 !         zxden  Array of ionized/excited species density, cm-3, must be dimensioned (nex,jmax)
 
 subroutine mzgrid (jmax,nex,idate,ut,glat,glong,stl,f107a,f107,f107p,ap,z, &
+                   jfin, oarr, & ! input to IRI-90
                    iri90_dir, &
                    zo,zo2,zn2,zns,znd,zno,ztn,zun,zvn,ze,zti,zte,zxden)
 
@@ -48,14 +49,15 @@ subroutine mzgrid (jmax,nex,idate,ut,glat,glong,stl,f107a,f107,f107p,ap,z, &
 
   implicit none
 
-  integer,intent(in) :: jmax,nex,idate
+  integer,intent(in) :: jmax,nex,idate,jfin(12)
   real,intent(in) :: ut,glat,glong,stl,f107a,f107,f107p,ap,z(jmax)
+  real,intent(inout) :: oarr(30)
   character(*),intent(in) :: iri90_dir
   real,intent(out) :: zo(jmax),zo2(jmax),zn2(jmax),zns(jmax),znd(jmax), &
        zno(jmax),ztn(jmax),zti(jmax),zte(jmax),zun(jmax),zvn(jmax),ze(jmax),zxden(nex,jmax)
 
   integer :: j,ijf,jmag,iday,mmdd
-  real :: rz12, d(8), t(2), sw(25), oarr(30)
+  real :: rz12, d(8), t(2), sw(25)
   logical :: jf(12)
   real,allocatable :: outf(:,:)              ! iri output (11,jmax)
   data sw/25*1./
@@ -85,9 +87,14 @@ subroutine mzgrid (jmax,nex,idate,ut,glat,glong,stl,f107a,f107,f107p,ap,z, &
 ! electron density, electron temperature, and ion temperature:
 ! The directory iri90_dir is the location of the ccirnn.asc and ursinn.asc files.
 !
-        jf(:) = .true.
-
-        jf(5) = .false.
+        do j=1,12
+           if (jfin(j) == 0) then
+              jf(j) = .false.
+           else
+              jf(j) = .true.
+           endif
+        enddo
+        
         jmag = 0
         rz12 = -f107a
         iday = idate - idate/1000*1000

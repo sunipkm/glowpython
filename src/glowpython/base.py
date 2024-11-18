@@ -3,16 +3,22 @@ from os import path
 import pytz
 import geomagdata as gi
 from datetime import datetime, timedelta
-from numpy import allclose, array, asarray, float32, isnan, ndarray, ones, trapz, zeros, copy
+from numpy import allclose, array, asarray, float32, full, isnan, ndarray, ones, trapz, zeros, copy
+import numpy as np
 from xarray import Dataset, Variable
 import xarray
 from .utils import Singleton, alt_grid, glowdate, geocent_to_geodet, interpolate_nan
 from .glowfort import cglow, cglow as cg, mzgrid, maxt, glow, conduct_iface  # type: ignore
-from typing import Any, Iterable, Sequence, SupportsFloat as Numeric, Tuple
+from typing import Any, Iterable, Optional, Sequence, SupportsFloat as Numeric, Tuple, Literal
 import atexit
 import warnings
 
 from multiprocessing import current_process
+
+HmFSource = Literal[
+    'CCIR',
+    'URSI',
+]
 
 # Suppress FutureWarnings
 warnings.simplefilter(action='once', category=FutureWarning)
@@ -245,7 +251,7 @@ class GlowModel(Singleton):
             cglow.cglow_dynamic_zero()  # zero out the arrays
             cglow.egrid_init()  # re-initialize energy grid
 
-        self._ds = Dataset() # empty dataset
+        self._ds = Dataset()  # empty dataset
         self._ready = False
         self._atm = False
         self._evaluated = False
@@ -325,8 +331,8 @@ class GlowModel(Singleton):
         cg.phitop[:] = 0.
 
         ds = Dataset(coords={'alt_km': ('alt_km', self._z, {'standard_name': 'altitude',
-                                                         'long_name': 'altitude',
-                                                         'units': 'km'}),
+                                                            'long_name': 'altitude',
+                                                            'units': 'km'}),
                              'energy': ('energy', cg.ener, {'long_name': 'precipitation energy',
                                                             'units': 'eV'})},
                      data_vars={'precip': ('energy', cg.phitop,
@@ -415,7 +421,7 @@ class GlowModel(Singleton):
         ds.attrs['emono'] = cglow.emono
         return
 
-    def atmosphere(self, density_perturbation: Sequence = None, tec: Numeric | Dataset = None) -> None:
+    def atmosphere(self, density_perturbation: Sequence = None, tec: Numeric | Dataset = None, hmf2: Optional[Numeric] = None, nmf2: Optional[Numeric] = None, f2_peak: HmFSource = 'URSI') -> None:
         """## Evaluate the atmosphere
         Uses the MSISE-00 and IRI-90 models to calculate the neutral and ion densities, and temperatures.
 
@@ -437,6 +443,9 @@ class GlowModel(Singleton):
 
               The nearest spatio-temporal TEC value is used to scale the electron density. This 
               dataset format is compatible with the GPS TEC maps from the Madrigal database.
+            - `hmf2 (Numeric, optional)`: Height of the F2 peak (km). Defaults to None.
+            - `nmf2 (Numeric, optional)`: Density of the F2 peak (m^-3). Defaults to None.
+            - `f2_peak (IRISRC, optional)`: F2 peak model. Defaults to 'URSI'.
 
         ### Raises:
             - `RuntimeError`: GLOW model not ready for evaluation. Run `setup` first.
@@ -483,11 +492,23 @@ class GlowModel(Singleton):
         # ! Calculate local solar time:
         stl = (cg.ut/3600. + cg.glong/15.) % 24
 
+        jf = full(12, 1, dtype=np.int32, order='F')
+        oarr = zeros(30, dtype=float32, order='F')
+        if f2_peak == 'URSI':
+            jf[4] = 0
+        if hmf2 is not None:
+            jf[8] = 0
+            oarr[1] = hmf2
+        if nmf2 is not None:
+            jf[7] = 0
+            oarr[0] = nmf2
+
         # ! Call MZGRID to calculate neutral atmosphere parameters:
         (cg.zo, cg.zo2, cg.zn2, cg.zns, cg.znd, cg.zno, cg.ztn,
          cg.zun, cg.zvn, cg.ze, cg.zti, cg.zte, cg.zxden) = \
             mzgrid(cg.nex, cg.idate, cg.ut, cg.glat, cg.glong,
-                   stl, cg.f107a, cg.f107, cg.f107p, cg.ap, self._z, IRI90_DIR)
+                   stl, cg.f107a, cg.f107, cg.f107p, cg.ap, self._z,
+                   jf, oarr, IRI90_DIR)
 
         # Apply the density perturbations
         cg.zo *= density_perturbation[0]
@@ -562,6 +583,15 @@ class GlowModel(Singleton):
             'long_name': 'Density Perturbation',
             'description': 'Density perturbation applied to the atmospheric densities. 1.0 means no perturbation.',
         })
+
+        ds.attrs['nmf2'] = (oarr[0], {'long_name': 'F2 peak density', 'units': 'm^-3'})
+        ds.attrs['hmf2'] = (oarr[1], {'long_name': 'F2 peak height', 'units': 'km'})
+        ds.attrs['nmf1'] = (oarr[2], {'long_name': 'F1 peak density', 'units': 'm^-3'})
+        ds.attrs['hmf1'] = (oarr[3], {'long_name': 'F1 peak height', 'units': 'km'})
+        ds.attrs['nme'] = (oarr[4], {'long_name': 'E peak density', 'units': 'm^-3'})
+        ds.attrs['hme'] = (oarr[5], {'long_name': 'E peak height', 'units': 'km'})
+        ds.attrs['nmd'] = (oarr[6], {'long_name': 'D peak density', 'units': 'm^-3'})
+        ds.attrs['hmd'] = (oarr[7], {'long_name': 'D peak height', 'units': 'km'})
 
         self._atm = True
         return
@@ -667,7 +697,7 @@ class GlowModel(Singleton):
         # ! Call CONDUCT to calculate Pederson and Hall conductivities:
         pedcond = zeros((cg.jmax,), self._z.dtype)
         hallcond = pedcond.copy()
-        conduct_iface(self._z, pedcond, hallcond) # loop in FORTRAN
+        conduct_iface(self._z, pedcond, hallcond)  # loop in FORTRAN
         # for j in range(cg.jmax):
         #     pedcond[j], hallcond[j] = conduct(cg.glat, cg.glong, self._z[j], cg.zo[j], cg.zo2[j], cg.zn2[j],
         #                                       cg.zxden[2, j], cg.zxden[5, j], cg.zxden[6, j], cg.ztn[j], cg.zti[j], cg.zte[j])
@@ -809,6 +839,9 @@ class GlowModel(Singleton):
     def evaluate(self, xuvfac: int = 3, jlocal: bool = False, kchem: int = 4, *,
                  density_perturbation: Sequence = None,
                  tec: Numeric | Dataset = None,
+                 hmf2: Optional[Numeric] = None,
+                 nmf2: Optional[Numeric] = None,
+                 f2_peak: HmFSource = 'URSI',
                  ion_n: Iterable = None,
                  ion_n2: Iterable = None,
                  ion_o: Iterable = None,
@@ -824,6 +857,9 @@ class GlowModel(Singleton):
             - `kchem (int, optional)`: CGLOW chemical calculations. Defaults to 4.
             - `density_perturbation (Sequence, optional)`: Density perturbations of O, O2, N2, NO, N(4S), N(2D) and e-. Defaults to None.
             - `tec (Numeric | Dataset, optional)`: Total Electron Content (TEC) in TECU. Defaults to None. Used to scale IRI-90 derived electron density.
+            - `hmf2 (Numeric, optional)`: Height of the F2 peak (km). Defaults to None.
+            - `nmf2 (Numeric, optional)`: Density of the F2 peak (m^-3). Defaults to None.
+            - `f2_peak (IRISRC, optional)`: F2 peak model. Defaults to 'URSI'.
             - `ion_n (Iterable, optional)`: N+ density profile. Must be specified if `kchem = 2`. Defaults to None.
             - `ion_n2 (Iterable, optional)`: N2+ density profile. Must be specified if `kchem = 2`. Defaults to None.
             - `ion_o (Iterable, optional)`: O+ density profile. If None, IRI-90 profile is used. Defaults to None.
@@ -833,10 +869,10 @@ class GlowModel(Singleton):
         ### Returns:
             - `xarray.Dataset`: GLOW model output dataset.
         """
-        self.atmosphere(density_perturbation, tec)
+        self.atmosphere(density_perturbation, tec, hmf2, nmf2, f2_peak)
         self.radtrans(xuvfac, jlocal, kchem, ion_n=ion_n, ion_n2=ion_n2, ion_o=ion_o, ion_o2=ion_o2, ion_no=ion_no)
         return self.result()
-    
+
     def result(self, copy: bool = True) -> xarray.Dataset:
         """## Get the GLOW model output dataset.
         This function returns a deep or shallow copy of the GLOW model output dataset.
@@ -876,6 +912,9 @@ class GlowModel(Singleton):
     def __call__(self, xuvfac: int = 3, jlocal: bool = False, kchem: int = 4, *,
                  density_perturbation: Sequence = None,
                  tec: Numeric | Dataset = None,
+                 hmf2: Optional[Numeric] = None,
+                 nmf2: Optional[Numeric] = None,
+                 f2_peak: HmFSource = 'URSI',
                  ion_n: Iterable = None,
                  ion_n2: Iterable = None,
                  ion_o: Iterable = None,
@@ -900,7 +939,7 @@ class GlowModel(Singleton):
         ### Returns:
             - `xarray.Dataset`: GLOW model output dataset.
         """
-        return self.evaluate(xuvfac, jlocal, kchem, density_perturbation=density_perturbation, tec=tec, ion_n=ion_n, ion_n2=ion_n2, ion_o=ion_o, ion_o2=ion_o2, ion_no=ion_no)
+        return self.evaluate(xuvfac, jlocal, kchem, density_perturbation=density_perturbation, tec=tec, ion_n=ion_n, ion_n2=ion_n2, ion_o=ion_o, ion_o2=ion_o2, ion_no=ion_no, hmf2=hmf2, nmf2=nmf2, f2_peak=f2_peak)
 
 
 def generic(time: datetime,
@@ -914,6 +953,9 @@ def generic(time: datetime,
             geomag_params: dict | Iterable = None,
             tzaware: bool = False,
             tec: Numeric | Dataset = None,
+            hmf2: Numeric = None,
+            nmf2: Numeric = None,
+            f2_peak: HmFSource = 'URSI',
             metadata: dict = None,
             jmax: int = 250,
             iscale: int = 1,
@@ -955,6 +997,9 @@ def generic(time: datetime,
             The nearest spatio-temporal TEC value is used to scale the electron density. This 
             dataset format is compatible with the GPS TEC maps from the Madrigal database.
 
+        - `hmf2 (Numeric, optional)`: Height of the F2 peak (km). Defaults to None.
+        - `nmf2 (Numeric, optional)`: Density of the F2 peak (m^-3). Defaults to None.
+        - `f2_peak (HmFSource, optional)`: F2 peak model. Defaults to 'URSI'.
         - `metadata (dict, optional)`: Metadata to be added to the output dataset. Defaults to None.
         - `jmax (int, optional)`: Maximum number of altitude levels. Defaults to 250.
         - `iscale (int, optional)`: Solar flux model. Defaults to 1 (EUVAC model).
@@ -982,7 +1027,8 @@ def generic(time: datetime,
     mod.initialize(jmax, Nbins, iscale)
     mod.setup(time, glat, glon, geomag_params=geomag_params, tzaware=tzaware)
     mod.precipitation(Q, Echar, itail=itail, fmono=fmono, emono=emono)
-    ds = mod.evaluate(xuvfac, jlocal, kchem, density_perturbation=density_perturbation, tec=tec)
+    ds = mod.evaluate(xuvfac, jlocal, kchem, density_perturbation=density_perturbation,
+                      tec=tec, hmf2=hmf2, nmf2=nmf2, f2_peak=f2_peak)
     _ = metadata
     return ds
 
@@ -998,6 +1044,9 @@ def maxwellian(time: datetime,
                geomag_params: dict | Iterable = None,
                tzaware: bool = False,
                tec: Numeric | Dataset = None,
+               hmf2: Optional[Numeric] = None,
+               nmf2: Optional[Numeric] = None,
+               f2_peak: HmFSource = 'URSI',
                metadata: dict = None) -> xarray.Dataset:
     """## GLOW model with electron precipitation assuming Maxwellian distribution.
 
@@ -1029,6 +1078,9 @@ def maxwellian(time: datetime,
 
             The nearest spatio-temporal TEC value is used to scale the electron density. This
             dataset format is compatible with the GPS TEC maps from the Madrigal database.
+        - `hmf2 (Numeric, optional)`: Height of the F2 peak (km). Defaults to None.
+        - `nmf2 (Numeric, optional)`: Density of the F2 peak (m^-3). Defaults to None.
+        - `f2_peak (IRISRC, optional)`: F2 peak model. Defaults to 'URSI'.
         - `metadata (dict, optional)`: Metadata to be added to the output dataset. Defaults to None.
 
     ### Raises:
@@ -1045,7 +1097,7 @@ def maxwellian(time: datetime,
     mod.initialize(alt_km, Nbins)
     mod.setup(time, glat, glon, geomag_params=geomag_params, tzaware=tzaware)
     mod.precipitation(Q, Echar)
-    ds = mod(density_perturbation=density_perturbation, tec=tec)
+    ds = mod(density_perturbation=density_perturbation, tec=tec, hmf2=hmf2, nmf2=nmf2, f2_peak=f2_peak)
     _ = metadata
     return ds
 
@@ -1059,6 +1111,9 @@ def no_precipitation(time: datetime,
                      geomag_params: dict | Iterable = None,
                      tzaware: bool = False,
                      tec: Numeric | Dataset = None,
+                     hmf2: Optional[Numeric] = None,
+                     nmf2: Optional[Numeric] = None,
+                     f2_peak: HmFSource = 'URSI',
                      metadata: dict = None) -> xarray.Dataset:
     """## GLOW model with no electron precipitation.
 
@@ -1088,6 +1143,9 @@ def no_precipitation(time: datetime,
 
             The nearest spatio-temporal TEC value is used to scale the electron density. This
             dataset format is compatible with the GPS TEC maps from the Madrigal database.
+        - `hmf2 (Numeric, optional)`: Height of the F2 peak (km). Defaults to None.
+        - `nmf2 (Numeric, optional)`: Density of the F2 peak (m^-3). Defaults to None.
+        - `f2_peak (IRISRC, optional)`: F2 peak model. Defaults to 'URSI'.
         - `metadata (dict, optional)`: Metadata to be added to the output dataset. Defaults to None.
 
     ### Raises:
@@ -1103,7 +1161,7 @@ def no_precipitation(time: datetime,
         alt_km = None
     mod.initialize(alt_km, Nbins)
     mod.setup(time, glat, glon, geomag_params=geomag_params, tzaware=tzaware)
-    ds = mod(density_perturbation=density_perturbation, tec=tec)
+    ds = mod(density_perturbation=density_perturbation, tec=tec, hmf2=hmf2, nmf2=nmf2, f2_peak=f2_peak)
     _ = metadata
     return ds
 
@@ -1120,6 +1178,9 @@ def monoenergetic(time: datetime,
                   geomag_params: dict | Iterable = None,
                   tzaware: bool = False,
                   tec: Numeric | Dataset = None,
+                  hmf2: Optional[Numeric] = None,
+                  nmf2: Optional[Numeric] = None,
+                  f2_peak: HmFSource = 'URSI',
                   metadata: dict = None) -> xarray.Dataset:
     """## GLOW model with monoenergetic precipitation.
 
@@ -1152,6 +1213,9 @@ def monoenergetic(time: datetime,
 
             The nearest spatio-temporal TEC value is used to scale the electron density. This
             dataset format is compatible with the GPS TEC maps from the Madrigal database.
+        - `hmf2 (Numeric, optional)`: Height of the F2 peak (km). Defaults to None.
+        - `nmf2 (Numeric, optional)`: Density of the F2 peak (m^-3). Defaults to None.
+        - `f2_peak (IRISRC, optional)`: F2 peak model. Defaults to 'URSI'.
         - `metadata (dict, optional)`: Metadata to be added to the output dataset. Defaults to None.
 
     ### Raises:
@@ -1168,6 +1232,6 @@ def monoenergetic(time: datetime,
     mod.initialize(alt_km, Nbins)
     mod.setup(time, glat, glon, geomag_params=geomag_params, tzaware=tzaware)
     mod.precipitation(0.001, 0.1, fmono=fmono, emono=emono, itail=itail)
-    ds = mod(density_perturbation=density_perturbation, tec=tec)
+    ds = mod(density_perturbation=density_perturbation, tec=tec, hmf2=hmf2, nmf2=nmf2, f2_peak=f2_peak)
     _ = metadata
     return ds
