@@ -584,14 +584,14 @@ class GlowModel(Singleton):
             'description': 'Density perturbation applied to the atmospheric densities. 1.0 means no perturbation.',
         })
 
-        ds.attrs['nmf2'] = (oarr[0], {'long_name': 'F2 peak density', 'units': 'm^-3'})
-        ds.attrs['hmf2'] = (oarr[1], {'long_name': 'F2 peak height', 'units': 'km'})
-        ds.attrs['nmf1'] = (oarr[2], {'long_name': 'F1 peak density', 'units': 'm^-3'})
-        ds.attrs['hmf1'] = (oarr[3], {'long_name': 'F1 peak height', 'units': 'km'})
-        ds.attrs['nme'] = (oarr[4], {'long_name': 'E peak density', 'units': 'm^-3'})
-        ds.attrs['hme'] = (oarr[5], {'long_name': 'E peak height', 'units': 'km'})
-        ds.attrs['nmd'] = (oarr[6], {'long_name': 'D peak density', 'units': 'm^-3'})
-        ds.attrs['hmd'] = (oarr[7], {'long_name': 'D peak height', 'units': 'km'})
+        ds.attrs['nmf2'] = oarr[0]
+        ds.attrs['hmf2'] = (oarr[1])
+        ds.attrs['nmf1'] = (oarr[2])
+        ds.attrs['hmf1'] = (oarr[3])
+        ds.attrs['nme'] = (oarr[4])
+        ds.attrs['hme'] = (oarr[5])
+        ds.attrs['nmd'] = (oarr[6])
+        ds.attrs['hmd'] = (oarr[7])
 
         self._atm = True
         return
