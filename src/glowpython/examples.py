@@ -23,6 +23,9 @@ def Maxwellian():
     parser.add_argument('--Echar', type=float, help='Characteristic energy in eV.', default=100e3, required=False)
     parser.add_argument('--Nbins', type=int, help='Number of energy bins.', default=250, required=False)
     parser.add_argument('--tec', type=float, help='Total electron content in TECU.', default=None, required=False)
+    parser.add_argument('--hmf2', type=float, help='Height of maximum F2 density in km.', default=None, required=False)
+    parser.add_argument('--nmf2', type=float, help='Maximum electron density at F2 in cm^-3.', default=None, required=False)
+    parser.add_argument('--f2_peak', type=str, help='F2 peak source model (URSI/CCIR).', default='URSI', required=False)
 
     args = parser.parse_args()
 
@@ -37,11 +40,11 @@ def Maxwellian():
     Nbins = args.Nbins
     tec = args.tec
 
-    iono = maxwellian(time, glat, glon, Nbins, Q, Echar, tec=tec)
+    iono = maxwellian(time, glat, glon, Nbins, Q, Echar, tec=tec, hmf2=args.hmf2, nmf2=args.nmf2, f2_peak=args.f2_peak)
 
     ne = interpolate_nan(iono["NeIn"].values, inplace=False)
 
-    print(f'TEC: {np.trapz(ne, iono.alt_km.values*1e5)*1e-12:.2f} TECU')
+    print(f'TEC: {np.trapz(ne, iono.alt_km.values*1e5)*1e-12:.2f} TECU, hmf2: {iono.attrs["hmf2"][0]:.1f} km')
     # %% plots
     plot.precip(iono["precip"])
     plot.ver(iono)
@@ -62,6 +65,9 @@ def NoPrecipitation():
     parser.add_argument('--glon', type=float, help='Geographic longitude in degrees.', default=-71.2, required=False)
     parser.add_argument('--Nbins', type=int, help='Number of energy bins.', default=250, required=False)
     parser.add_argument('--tec', type=float, help='Total electron content in TECU.', default=None, required=False)
+    parser.add_argument('--hmf2', type=float, help='Height of maximum F2 density in km.', default=None, required=False)
+    parser.add_argument('--nmf2', type=float, help='Maximum electron density at F2 in cm^-3.', default=None, required=False)
+    parser.add_argument('--f2_peak', type=str, help='F2 peak source model (URSI/CCIR).', default='URSI', required=False)
 
     args = parser.parse_args()
 
@@ -71,11 +77,11 @@ def NoPrecipitation():
     Nbins = args.Nbins
     tec = args.tec
 
-    iono = no_precipitation(time, glat, glon, Nbins, tec=tec)
+    iono = no_precipitation(time, glat, glon, Nbins, tec=tec, hmf2=args.hmf2, nmf2=args.nmf2, f2_peak=args.f2_peak)
 
     ne = interpolate_nan(iono["NeIn"].values, inplace=False)
 
-    print(f'TEC: {np.trapz(ne, iono.alt_km.values*1e5)*1e-12:.2f} TECU')
+    print(f'TEC: {np.trapz(ne, iono.alt_km.values*1e5)*1e-12:.2f} TECU, hmf2: {iono.attrs["hmf2"][0]:.1f} km')
 
     plot.density(iono)
 

@@ -14,7 +14,8 @@ glon = -147.5
 # %% Number of energy bins
 Nbins = 250
 
-iono = glow.no_precipitation(time, glat, glon, Nbins)
+iono = glow.no_precipitation(time, glat, glon, Nbins, hmf2=250)
+print(iono.attrs['hmf2'])
 # %% simple plots
 if False:
     plot.precip(iono["precip"])  # all zeros as intended

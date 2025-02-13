@@ -102,6 +102,13 @@ subroutine ephoto_init
   bso2(35:39) = .01
   bso2(40:lmax) = 0.
 
+  ! Initialize the output arrays
+  epsil1(:,:,:) = 0.
+  epsil2(:,:,:) = 0.
+  sigion(:,:) = 0.
+  sigabs(:,:) = 0.
+  ephoto_prob(:,:,:) = 0.
+
 ! First time only: Read cross section data from files, convert to cm2,
 ! calculate energy losses:
 

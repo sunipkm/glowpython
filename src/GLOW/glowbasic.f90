@@ -75,6 +75,7 @@ program glowbasic
 ! Set number of altitude levels:
 !
   jmax = 102
+  nbins = 50
 !
 ! Allocate local arrays:
 !
@@ -93,6 +94,14 @@ program glowbasic
 ! Call EGRID to set up electron energy grid:
 !
   call egrid (ener, edel, nbins)
+!
+! Call ALT_GRID to set up altitude grid:
+!
+  call alt_grid(jmax, 60, 0.5, 4, z)
+!
+! Fill altitude array, converting to cm:
+!
+  zz(:) = z(:) * 1.e5     ! km to cm at all jmax levels
 !
 ! Loop to call GLOW for designated inputs until end-of-file or any character on standard input:
 !
@@ -119,10 +128,6 @@ program glowbasic
 !
     phitop(:) = 0.
     if (ef>.001 .and. ec>1.) call maxt (ef,ec,ener,edel,nbins,itail,fmono,emono,phitop)
-!
-! Fill altitude array, converting to cm:
-!
-    zz(:) = z(:) * 1.e5     ! km to cm at all jmax levels
 !
 ! Call GLOW to calculate ionized and excited species, airglow emission rates,
 ! and vertical column brightnesses:
