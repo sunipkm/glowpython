@@ -120,5 +120,10 @@ containing outputs from GLOW:
 
 All available keys carry unit and description.
 
-
+## Development Path
+This repository started its life as a fork of the [NCAR-GLOW](https://github.com/space-physics/NCAR-GLOW) model to upgrade from [geomagindices](https://github.com/space-physics/geomagindices) that does not provide flux and Ap data post-SWPC.
+The [NCAR-GLOW](https://github.com/space-physics/NCAR-GLOW) implementation runs the GLOW model as a separate process, invoked from a compiled GLOW binary, and runtime parameters are passed to this binary over `STDIN` and `STDOUT` is parsed to produce the [`Dataset`](https://docs.xarray.dev/en/stable/generated/xarray.Dataset.html) containing the results of the simulation.
+This context switching, and text data parsing adds significant runtime overhead, and loss of precision.
+Starting v3.0.0, the core of []`glowpython`](https://github.com/sunipkm/glowpython) was changed to use F2PY, and pass inputs and get outputs from the FORTRAN library directly.
+Apart from the public-facing API (`no_precipitation`, `maxwellian`), the internal implementation of this repository is completely independent from NCAR-GLOW.
 

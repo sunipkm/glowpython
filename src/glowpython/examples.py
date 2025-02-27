@@ -44,7 +44,7 @@ def Maxwellian():
 
     ne = interpolate_nan(iono["NeIn"].values, inplace=False)
 
-    print(f'TEC: {np.trapz(ne, iono.alt_km.values*1e5)*1e-12:.2f} TECU, hmf2: {iono.attrs["hmf2"][0]:.1f} km')
+    print(f'TEC: {np.trapz(ne, iono.alt_km.values*1e5)*1e-12:.2f} TECU, hmf2: {iono.attrs["hmf2"]:.1f} km')
     # %% plots
     plot.precip(iono["precip"])
     plot.ver(iono)
@@ -81,7 +81,7 @@ def NoPrecipitation():
 
     ne = interpolate_nan(iono["NeIn"].values, inplace=False)
 
-    print(f'TEC: {np.trapz(ne, iono.alt_km.values*1e5)*1e-12:.2f} TECU, hmf2: {iono.attrs["hmf2"][0]:.1f} km')
+    print(f'TEC: {np.trapz(ne, iono.alt_km.values*1e5)*1e-12:.2f} TECU, hmf2: {iono.attrs["hmf2"]:.1f} km')
 
     plot.density(iono)
 
