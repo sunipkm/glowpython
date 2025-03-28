@@ -93,11 +93,15 @@ Output Dataset:
         - `jlocal`: Local calculation only (disable electron transport).
         - `kchem`: GLOW chemistry level.
 """
-from .base import GlowModel, generic, no_precipitation, maxwellian, HmFSource
-from .utils import nan_helper, interpolate_nan, geocent_to_geodet, WGS74_ELL, WGS84_ELL
+from .base import GlowModel, \
+    generic, no_precipitation, maxwellian, \
+    HmFSource, FluxSource
+from . import utils
 from .version import __version__
 
-__all__ = ['GlowModel', 'generic', 'no_precipitation', 'maxwellian', 'HmFSource',
-           'interpolate_nan', 'nan_helper', 
-           'geocent_to_geodet', 'WGS74_ELL', 'WGS84_ELL',
-           '__version__']
+__all__ = [
+    'GlowModel', 'generic', 'no_precipitation', 'maxwellian',
+    'HmFSource', 'FluxSource',
+    'utils',
+    '__version__'
+]

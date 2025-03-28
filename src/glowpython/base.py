@@ -20,6 +20,11 @@ HmFSource = Literal[
     'URSI',
 ]
 
+FluxSource = Literal[
+    'Hinteregger',
+    'EUVAC',
+]
+
 # Suppress FutureWarnings
 warnings.simplefilter(action='once', category=FutureWarning)
 
@@ -131,10 +136,10 @@ class GlowModel(Singleton):
         self._atm = False
         self._evaluated = False
         self._z = zeros(0, dtype=float32, order='F')
-        self.initialize()
         return self
 
-    def initialize(self, alt_km: int | Iterable = 250, nbins: int = 100, iscale: int = 1, *, wave1: Sequence = None, wave2: Sequence = None, rflux: Sequence = None) -> None:
+    def initialize(self, alt_km: int | Iterable = 250, nbins: int = 100, 
+                   sflux: FluxSource | Tuple[Sequence, Sequence, Sequence] = 'EUVAC') -> None:
         """## Initialize Inputs
         Initializes the altitude grid, energy bins and solar flux model.
 
@@ -144,13 +149,9 @@ class GlowModel(Singleton):
                 - `int`: Length of altitude grid. The altitude grid is then evaluated using the `alt_grid` function.
                 - `Iterable`: Custom altitude grid. Must be a 1-D array, and between 60 and 1000 km.
             - `nbins (int, optional)`: Number of energy bins. Defaults to 100.
-            - `iscale (int, optional)`: Solar flux model. Defaults to 1 (EUVAC model). 
-                - `0`: Hinteregger Model
-                - `1`: EUVAC Model
-                - `2`: User-supplied solar flux model. In this case, `wave1`, `wave2` and `rflux` must be supplied.
-            - `wave1 (Sequence, optional)`: Starting points of the solar flux wavelength bins (`length=123`). Defaults to None. Required if `iscale` is 2.
-            - `wave2 (Sequence, optional)`: Ends of the solar flux wavelength bins. Defaults to None. Required if `iscale` is 2.
-            - `rflux (Sequence, optional)`: Solar flux values. Defaults to None. Required if `iscale` is 2.
+            - `sflux (FluxSource | Tuple[Sequence, Sequence, Sequence], optional)`: Solar flux model. Defaults to EUVAC model. 
+                - `FluxSource`: Solar flux model. Can be 'Hinteregger' or 'EUVAC'.
+                - `Tuple[Sequence, Sequence, Sequence]`: Custom solar flux model. The first sequence is the starting points of the solar flux wavelength bins, the second sequence is the ends of the solar flux wavelength bins, and the third sequence is the solar flux values. The sequences must be of length 123.
         ### Raises:
             - `RuntimeError`: Reset the model before initializing.
             - `ValueError`: `alt_km` must be specified if not already initialized.
@@ -198,12 +199,8 @@ class GlowModel(Singleton):
         reset_cglow(jmax, nbins)
         cg.zz = self._z * 1e5  # convert to cm
 
-        if not 0 <= iscale <= 2:
-            raise ValueError('iscale must be between 0 and 2')
-
-        if iscale == 2:
-            if wave1 is None or wave2 is None or rflux is None:
-                raise ValueError('wave1, wave2 and rflux must be supplied if iscale is 2')
+        if isinstance(sflux, Tuple):
+            wave1, wave2, rflux = sflux
             wave1: ndarray = array(wave1, dtype=float32, order='F')
             wave2: ndarray = array(wave2, dtype=float32, order='F')
             rflux: ndarray = array(rflux, dtype=float32, order='F')
@@ -225,12 +222,19 @@ class GlowModel(Singleton):
                 wave1 = wave1[::-1]
                 wave2 = wave2[::-1]
                 rflux = rflux[::-1]
-            cg.iscale = iscale
+            cg.iscale = 2
             cg.wave1 = wave1
             cg.wave2 = wave2
             cg.sflux = rflux
+            cg.sflux_init() # we still need to call it to set the sflux_init last value
         else:
-            cg.iscale = iscale
+            if sflux == 'Hinteregger': 
+                sflux = 0 
+            elif sflux == 'EUVAC': 
+                sflux = 1
+            else:
+                raise ValueError(f'Invalid value for sflux: {sflux}')
+            cg.iscale = sflux
             cg.sflux_init()
 
         self._initd = True
@@ -343,12 +347,18 @@ class GlowModel(Singleton):
                                 }
                      )
 
-        ds.coords['sflux'] = Variable('wave', cg.sflux,
-                                      {'long_name': 'solar flux',
-                                       'units': 'cm^{-2} s^{-1}',
-                                       'comment': 'scaled solar flux'})
-        wave_attrs = {'long_name': 'wavelength',
-                      'units': 'Å'}
+        ds['sflux'] = Variable(
+            'wave', cg.sflux,
+            {
+                'long_name': 'solar flux',
+                'units': 'cm^{-2} s^{-1}',
+                'comment': 'scaled solar flux'
+            }
+        )
+        wave_attrs = {
+            'long_name': 'wavelength',
+            'units': 'Å'
+        }
         ds.coords['wave'] = ('wave', (cg.wave1 + cg.wave2)*0.5, wave_attrs)
         ds.coords['wave'].attrs['description'] = 'Center of solar flux bins'
         ds.coords['dwave'] = ('wave', cg.wave2 - cg.wave1, wave_attrs)
@@ -945,7 +955,7 @@ class GlowModel(Singleton):
 def generic(time: datetime,
             glat: Numeric,
             glon: Numeric,
-            Nbins: int = 100,
+            nbins: int = 100,
             Q: Numeric = None,
             Echar: Numeric = None,
             density_perturbation: Sequence = None,
@@ -958,7 +968,7 @@ def generic(time: datetime,
             f2_peak: HmFSource = 'URSI',
             metadata: dict = None,
             jmax: int = 250,
-            iscale: int = 1,
+            sflux: FluxSource | Tuple[Sequence, Sequence, Sequence] = 'EUVAC',
             xuvfac: Numeric = 3,
             kchem: int = 4,
             jlocal: bool = False,
@@ -1002,7 +1012,9 @@ def generic(time: datetime,
         - `f2_peak (HmFSource, optional)`: F2 peak model. Defaults to 'URSI'.
         - `metadata (dict, optional)`: Metadata to be added to the output dataset. Defaults to None.
         - `jmax (int, optional)`: Maximum number of altitude levels. Defaults to 250.
-        - `iscale (int, optional)`: Solar flux model. Defaults to 1 (EUVAC model).
+        - `sflux (FluxSource | Tuple[Sequence, Sequence, Sequence], optional)`: Solar flux model. Defaults to EUVAC model. 
+                - `FluxSource`: Solar flux model. Can be 'Hinteregger' or 'EUVAC'.
+                - `Tuple[Sequence, Sequence, Sequence]`: Custom solar flux model. The first sequence is the starting points of the solar flux wavelength bins, the second sequence is the ends of the solar flux wavelength bins, and the third sequence is the solar flux values. The sequences must be of length 123.
         - `xuvfac (Numeric, optional)`: XUV enhancement factor. Defaults to 3.
         - `kchem (int, optional)`: CGLOW chemical calculations. Defaults to 4. See `cglow.kchem` for details.
         - `jlocal (bool, optional)`: Set to False for electron transport calculations, set to True for local calculations only. Defaults to False.
@@ -1024,7 +1036,7 @@ def generic(time: datetime,
         - `xarray.Dataset`: GLOW model output dataset.
     """
     mod = GlowModel()  # Get an instance of the GLOW model
-    mod.initialize(jmax, Nbins, iscale)
+    mod.initialize(jmax, nbins, sflux)
     mod.setup(time, glat, glon, geomag_params=geomag_params, tzaware=tzaware)
     mod.precipitation(Q, Echar, itail=itail, fmono=fmono, emono=emono)
     ds = mod.evaluate(xuvfac, jlocal, kchem, density_perturbation=density_perturbation,

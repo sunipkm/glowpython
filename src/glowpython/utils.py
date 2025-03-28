@@ -4,6 +4,13 @@ from typing import Iterable, SupportsAbs, Tuple, SupportsFloat as Numeric, Calla
 from numpy import arctan, cumsum, float32, interp, isnan, linspace, ndarray, tan, pi as M_PI, asarray, all, tanh
 from datetime import datetime
 
+"""
+GlowPython.utils
+================
+
+This module provides utility functions for the GlowPython package.
+"""
+
 #: WGS84 ellipsoid major and minor axes.
 WGS84_ELL = (6378137, 6356752.3142)  # WGS84 ellipsoid
 #: WGS74 ellipsoid major and minor axes.

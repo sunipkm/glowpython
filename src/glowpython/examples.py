@@ -1,6 +1,6 @@
 import numpy as np
 
-from glowpython import interpolate_nan
+from glowpython.utils import interpolate_nan
 from .base import maxwellian, no_precipitation
 from . import plots as plot
 from datetime import datetime

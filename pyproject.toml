@@ -11,7 +11,7 @@ build-backend = "mesonpy"
 
 [project]
 name = "glowpython"
-version = "4.0.2"
+version = "5.0.0a1"
 requires-python = ">=3.7"
 authors = [
     {name = "Sunip K. Mukherjee", email = "sunipkmukherjee@gmail.com"},
