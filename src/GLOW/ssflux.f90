@@ -159,11 +159,11 @@ endif
 
 ! User-supplied data:
 
-if (iscale == 2) then
-  do l=1,lmax
-    sflux(l)=sf_rflux(l)
-  enddo
-endif
+! if (iscale == 2) then
+!   do l=1,lmax
+!     sflux(l)=sf_rflux(l)
+!   enddo
+! endif
 
 ! Fill wavelength arrays:
 
