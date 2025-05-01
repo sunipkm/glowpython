@@ -151,7 +151,9 @@ class GlowModel(Singleton):
             - `nbins (int, optional)`: Number of energy bins. Defaults to 100.
             - `sflux (FluxSource | Tuple[Sequence, Sequence, Sequence], optional)`: Solar flux model. Defaults to EUVAC model. 
                 - `FluxSource`: Solar flux model. Can be 'Hinteregger' or 'EUVAC'.
-                - `Tuple[Sequence, Sequence, Sequence]`: Custom solar flux model. The first sequence is the starting points of the solar flux wavelength bins, the second sequence is the ends of the solar flux wavelength bins, and the third sequence is the solar flux values. The sequences must be of length 123.
+                - `Tuple[Sequence, Sequence, Sequence]`: Custom solar flux model. The first sequence is the starting points of the solar flux wavelength bins, 
+                  the second sequence is the ends of the solar flux wavelength bins, and the third sequence is the solar flux values. 
+                  The sequences must be of length 123.
         ### Raises:
             - `RuntimeError`: Reset the model before initializing.
             - `ValueError`: `alt_km` must be specified if not already initialized.
