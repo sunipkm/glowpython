@@ -15,6 +15,7 @@ Provides
     2. `generic`: GLOW model with generic interface.
     3. `no_precipitation`: GLOW model without precipitation.
     4. `maxwellian`: GLOW model with maxwellian precipitation.
+    5. `monoenergetic`: GLOW model with monoenergetic precipitation.
 
 Usage:
     1. Class based usage:
@@ -76,6 +77,10 @@ Output Dataset:
             - `loss`: Fractional loss rate of various species (1/s)
         - Dimension (`energy`):
             - `precip`: Precipitation flux (cm^-2/s/eV)
+            - `edel`  : Width of each bin in the energy grid (eV)
+        - Dimension (`alt_km`,`energy`):
+            - `dflx`: Downward hemispheric electron flux (1/cm^2/s/eV)
+            - `uflx`: Upward hemispheric electron flux (1/cm^2/s/eV)
     - Attributes:
         - `time`: Time of evaluation (ISO 8601 formatted string)
         - `glatlon`: Geographic latitude and longitude of evaluation (degrees)
@@ -93,11 +98,11 @@ Output Dataset:
         - `jlocal`: Local calculation only (disable electron transport).
         - `kchem`: GLOW chemistry level.
 """
-from .base import GlowModel, generic, no_precipitation, maxwellian, HmFSource
+from .base import GlowModel, generic, no_precipitation, maxwellian, monoenergetic, HmFSource
 from .utils import nan_helper, interpolate_nan, geocent_to_geodet, WGS74_ELL, WGS84_ELL
 from .version import __version__
 
-__all__ = ['GlowModel', 'generic', 'no_precipitation', 'maxwellian', 'HmFSource',
+__all__ = ['GlowModel', 'generic', 'no_precipitation', 'maxwellian', 'monoenergetic','HmFSource',
            'interpolate_nan', 'nan_helper', 
            'geocent_to_geodet', 'WGS74_ELL', 'WGS84_ELL',
            '__version__']

@@ -333,7 +333,7 @@ class GlowModel(Singleton):
         ds = Dataset(coords={'alt_km': ('alt_km', self._z, {'standard_name': 'altitude',
                                                             'long_name': 'altitude',
                                                             'units': 'km'}),
-                             'energy': ('energy', cg.ener, {'long_name': 'precipitation energy',
+                             'energy': ('energy', cg.ener, {'long_name': 'energy grid',
                                                             'units': 'eV'})},
                      data_vars={'precip': ('energy', cg.phitop,
                                            {
@@ -393,7 +393,7 @@ class GlowModel(Singleton):
             - `Echar (Numeric, optional)`: Energy of precipitating electrons. Setting to None or < 1 makes it equivalent to no-precipitation. Defaults to None.
             - `itail (bool, optional)`: Disable/enable low-energy tail. Defaults to False.
             - `fmono (float, optional)`: Monoenergetic energy flux, erg/cm^2. Defaults to 0.
-            - `emono (float, optional)`: Monoenergetic characteristic energy, keV. Defaults to 0.
+            - `emono (float, optional)`: Monoenergetic characteristic energy, eV. Defaults to 0.
         """
         if not self._initd:
             raise RuntimeError('Initialize the model before setting up')
@@ -833,6 +833,28 @@ class GlowModel(Singleton):
         ds.attrs['kchem'] = kchem
         ds.attrs['jlocal'] = cglow.jlocal
 
+        # Electron flux
+        ds['dflx'] = Variable(('alt_km', 'energy'), cg.dflx.T, {
+            'long_name': 'Downward flux',
+            'units': 'cm^{-2} s^{-1} eV^{-1}',
+            'description': 'Downward hemispherical electron flux',
+            'source': 'GLOW'
+        })
+
+        ds['uflx'] = Variable(('alt_km', 'energy'), cg.uflx.T, {
+            'long_name': 'Upward flux',
+            'units': 'cm^{-2} s^{-1} eV^{-1}',
+            'description': 'Upward hemispherical electron flux',
+            'source': 'GLOW'
+        })
+        
+        ds['edel'] = Variable(('energy'), cg.edel, {
+            'long_name': 'Energy bin width',
+            'units': 'eV',
+            'description': 'Width of each bin in electron energy grid',
+            'source': 'GLOW'
+        })
+
         self._evaluated = True
         return
 
@@ -1008,7 +1030,7 @@ def generic(time: datetime,
         - `jlocal (bool, optional)`: Set to False for electron transport calculations, set to True for local calculations only. Defaults to False.
         - `itail (bool, optional)`: Disable/enable low-energy tail. Defaults to False.
         - `fmono (float, optional)`: Monoenergetic energy flux, erg/cm^2. Defaults to 0.
-        - `emono (float, optional)`: Monoenergetic characteristic energy, keV. Defaults to 0.
+        - `emono (float, optional)`: Monoenergetic characteristic energy, eV. Defaults to 0.
 
     ### Raises:
         - `ValueError`: Number of energy bins must be >= 10.
@@ -1190,7 +1212,7 @@ def monoenergetic(time: datetime,
         - `glon (Numeric)`: Location longitude (degrees).
         - `Nbins (int)`: Number of energy bins (must be >= 10). Defaults to 100.
         - `fmono (float, optional)`: Monoenergetic energy flux, erg/cm^2. Defaults to 0.
-        - `emono (float, optional)`: Monoenergetic characteristic energy, keV. Defaults to 0.
+        - `emono (float, optional)`: Monoenergetic characteristic energy, eV. Defaults to 0.
         - `itail (bool, optional)`: Disable/enable low-energy tail. Defaults to False.
         - `density_perturbation (Sequence, optional)`: Density perturbations of O, O2, N2, NO, N(4S), N(2D) and e-. 
            Supply as a sequence of length 7. Values must be positive. Defaults to None (all ones, i.e. no modification).
@@ -1231,7 +1253,7 @@ def monoenergetic(time: datetime,
         alt_km = None
     mod.initialize(alt_km, Nbins)
     mod.setup(time, glat, glon, geomag_params=geomag_params, tzaware=tzaware)
-    mod.precipitation(0.001, 0.1, fmono=fmono, emono=emono, itail=itail)
+    mod.precipitation(0.001, emono/2., fmono=fmono, emono=emono, itail=itail)
     ds = mod(density_perturbation=density_perturbation, tec=tec, hmf2=hmf2, nmf2=nmf2, f2_peak=f2_peak)
     _ = metadata
     return ds
