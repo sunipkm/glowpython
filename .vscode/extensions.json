@@ -10,6 +10,6 @@
         "ms-toolsai.jupyter-keymap",
         "ms-toolsai.jupyter-renderers",
         "ms-toolsai.vscode-jupyter-slideshow",
-        "valentjn.vscode-ltex",
+        "ltex-plus.vscode-ltex-plus",
 	]
 }
